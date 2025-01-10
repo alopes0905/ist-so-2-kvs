@@ -272,39 +272,31 @@ static void dispatch_threads(DIR *dir) { //EDITAR ??
   char buffer[256];
   while (1) {
     ssize_t bytes_read = read(fifo_fd, buffer, sizeof(buffer));
-    if (bytes_read > 0) {
-      int opcode = buffer[0];
-      switch (opcode) {
-        case OP_CODE_CONNECT:
-          // Handle connect
-          printf("Received CONNECT command\n");
-          continue;
+    int opcode = buffer[0];
+    switch (opcode) {
+      case OP_CODE_CONNECT:
+        // Handle connect
+        printf("Received CONNECT command\n");
+        continue;
 
-        case OP_CODE_DISCONNECT:
-          // Handle disconnect
-          printf("Received DISCONNECT command\n");
-          break;
+      case OP_CODE_DISCONNECT:
+        // Handle disconnect
+        printf("Received DISCONNECT command\n");
+        break;
 
-        case OP_CODE_SUBSCRIBE:
-          // Handle subscribe
-          printf("Received SUBSCRIBE command\n");
-          continue;
+      case OP_CODE_SUBSCRIBE:
+        // Handle subscribe
+        printf("Received SUBSCRIBE command\n");
+        continue;
 
-        case OP_CODE_UNSUBSCRIBE:
-          // Handle unsubscribe
-          printf("Received UNSUBSCRIBE command\n");
-          continue;
+      case OP_CODE_UNSUBSCRIBE:
+        // Handle unsubscribe
+        printf("Received UNSUBSCRIBE command\n");
+        continue;
 
-        default:
-          printf("Unknown command received\n");
-          continue;
-      }
-    } else if (bytes_read == 0) {
-      printf("NOT EOF\n");
-      break;
-    } else {
-      perror("Failed to read from register FIFO");
-      break;
+      default:
+        printf("Unknown command received\n");
+        continue;
     }
   }
 
