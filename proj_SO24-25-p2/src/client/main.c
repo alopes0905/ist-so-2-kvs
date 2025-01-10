@@ -10,6 +10,10 @@
 #include "src/common/constants.h"
 #include "src/common/io.h"
 
+pthread_t notif_thread;
+int notif_pipe;
+
+
 int main(int argc, char *argv[]) {
   if (argc < 3) {
     fprintf(stderr, "Usage: %s <client_unique_id> <register_pipe_path>\n",
@@ -29,7 +33,11 @@ int main(int argc, char *argv[]) {
   strncat(resp_pipe_path, argv[1], strlen(argv[1]) * sizeof(char));
   strncat(notif_pipe_path, argv[1], strlen(argv[1]) * sizeof(char));
 
-  // TODO open pipes
+  // TODO open pipes - ALREADY IMPLEMENTED
+  if (kvs_connect(req_pipe_path, resp_pipe_path, argv[2], notif_pipe_path, &notif_pipe) != 0) {
+    fprintf(stderr, "Failed to connect to the server\n");
+    return 1;
+  }
 
   while (1) {
     switch (get_next(STDIN_FILENO)) {
@@ -38,7 +46,9 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "Failed to disconnect to the server\n");
         return 1;
       }
-      // TODO: end notifications thread
+      // TODO: end notifications thread - ALREADY IMPLEMENTED
+      pthread_cancel(notif_thread); //Lopes
+      pthread_join(notif_thread, NULL); //Lopes
       printf("Disconnected from server\n");
       return 0;
 
@@ -88,7 +98,13 @@ int main(int argc, char *argv[]) {
       break;
 
     case EOC:
-      // input should end in a disconnect, or it will loop here forever
+      // input should end in a disconnect, or it will loop here forever - ALREADY IMPLEMENTED
+      if (kvs_disconnect() != 0) {
+        fprintf(stderr, "Failed to disconnect to the server\n");
+        return 1;
+      }
+      pthread_cancel(notif_thread);
+      pthread_join(notif_thread, NULL);
       break;
     }
   }
