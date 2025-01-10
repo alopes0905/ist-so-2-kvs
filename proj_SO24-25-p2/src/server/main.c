@@ -240,7 +240,7 @@ static void *get_file(void *arguments) {
   pthread_exit(NULL);
 }
 
-static void dispatch_threads(DIR *dir) {
+static void dispatch_threads(DIR *dir) { //EDITAR ??
   pthread_t *threads = malloc(max_threads * sizeof(pthread_t));
 
   if (threads == NULL) {
@@ -271,7 +271,7 @@ static void dispatch_threads(DIR *dir) {
   }
   char buffer[256];
   while (1) {
-    int bytes_read = read(fifo_fd, buffer, sizeof(buffer));
+    size_t bytes_read = read(fifo_fd, buffer, sizeof(buffer));
     if (bytes_read > 0) {
       int opcode = buffer[0];
       switch (opcode) {
