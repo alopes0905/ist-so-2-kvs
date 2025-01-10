@@ -269,10 +269,8 @@ static void dispatch_threads(DIR *dir) { //EDITAR ??
     free(threads);
     return;
   }
-  char buffer[256];
   while (1) {
-    int opcode = buffer[0];
-    switch (opcode) {
+    switch (get_next(fifo_fd)) {
       case OP_CODE_CONNECT:
         // Handle connect
         printf("Received CONNECT command\n");
