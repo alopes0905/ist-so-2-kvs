@@ -301,7 +301,7 @@ static void dispatch_threads(DIR *dir) { //EDITAR ??
     }
     }
   }
-
+  printf("1\n");
   close(fifo_fd);
 
   for (unsigned int i = 0; i < max_threads; i++) {
@@ -312,11 +312,11 @@ static void dispatch_threads(DIR *dir) { //EDITAR ??
       return;
     }
   }
-
+  printf("2\n");
   if (pthread_mutex_destroy(&thread_data.directory_mutex) != 0) {
     fprintf(stderr, "Failed to destroy directory_mutex\n");
   }
-
+  printf("3\n");
   free(threads);
 }
 
