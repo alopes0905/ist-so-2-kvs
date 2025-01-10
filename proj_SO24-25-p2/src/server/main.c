@@ -272,7 +272,9 @@ static void dispatch_threads(DIR *dir) { //EDITAR ??
   char buffer[256];
   while (1) {
     ssize_t bytes_read = read(fifo_fd, buffer, sizeof(buffer));
+    printf("1");
     int opcode = buffer[0];
+    printf("2");
     if (bytes_read > 0) {
     switch (opcode) {
       case OP_CODE_CONNECT:
@@ -301,7 +303,6 @@ static void dispatch_threads(DIR *dir) { //EDITAR ??
     }
     }
   }
-  printf("1\n");
   close(fifo_fd);
 
   for (unsigned int i = 0; i < max_threads; i++) {
@@ -312,11 +313,9 @@ static void dispatch_threads(DIR *dir) { //EDITAR ??
       return;
     }
   }
-  printf("2\n");
   if (pthread_mutex_destroy(&thread_data.directory_mutex) != 0) {
     fprintf(stderr, "Failed to destroy directory_mutex\n");
   }
-  printf("3\n");
   free(threads);
 }
 
