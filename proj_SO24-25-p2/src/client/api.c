@@ -94,6 +94,7 @@ int kvs_connect(char const *req_pipe_path, char const *resp_pipe_path,
 
 int kvs_disconnect(void) {
   cleanup_pipes(); //FIXME - ERRORS?
+  printf("nigga\n");
   return 0;
 }
 
