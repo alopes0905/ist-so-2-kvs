@@ -278,22 +278,22 @@ static void dispatch_threads(DIR *dir) { //EDITAR ??
         case OP_CODE_CONNECT:
           // Handle connect
           printf("Received CONNECT command\n");
-          break;
+
         case OP_CODE_DISCONNECT:
           // Handle disconnect
           printf("Received DISCONNECT command\n");
           break;
+
         case OP_CODE_SUBSCRIBE:
           // Handle subscribe
           printf("Received SUBSCRIBE command\n");
-          break;
+
         case OP_CODE_UNSUBSCRIBE:
           // Handle unsubscribe
           printf("Received UNSUBSCRIBE command\n");
-          break;
+
         default:
           printf("Unknown command received\n");
-          break;
       }
     } else if (bytes_read == 0) {
       // End of file
