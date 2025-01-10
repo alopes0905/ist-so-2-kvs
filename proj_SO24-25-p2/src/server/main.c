@@ -14,6 +14,8 @@
 #include "operations.h"
 #include "parser.h"
 #include "pthread.h"
+#include "src/common/protocol.h"
+#include "src/common/io.h"
 
 struct SharedData {
   DIR *dir;
@@ -28,6 +30,7 @@ size_t active_backups = 0; // Number of active backups
 size_t max_backups;        // Maximum allowed simultaneous backups
 size_t max_threads;        // Maximum allowed simultaneous threads
 char *jobs_directory = NULL;
+char *register_fifo_path = NULL;
 
 int filter_job_files(const struct dirent *entry) {
   const char *dot = strrchr(entry->d_name, '.');
@@ -258,7 +261,50 @@ static void dispatch_threads(DIR *dir) {
     }
   }
 
-  // ler do FIFO de registo
+  // ler do FIFO de registo ALREADY IMPLEMENTED
+  int fifo_fd = open(register_fifo_path, O_RDONLY);
+  if (fifo_fd == -1) {
+    perror("Failed to open register FIFO");
+    pthread_mutex_destroy(&thread_data.directory_mutex);
+    free(threads);
+    return;
+  }
+  char buffer[256];
+  while (1) {
+    int bytes_read = read(fifo_fd, buffer, sizeof(buffer));
+    if (bytes_read > 0) {
+      int opcode = buffer[0];
+      switch (opcode) {
+        case OP_CODE_CONNECT:
+          // Handle connect
+          printf("Received CONNECT command\n");
+          break;
+        case OP_CODE_DISCONNECT:
+          // Handle disconnect
+          printf("Received DISCONNECT command\n");
+          break;
+        case OP_CODE_SUBSCRIBE:
+          // Handle subscribe
+          printf("Received SUBSCRIBE command\n");
+          break;
+        case OP_CODE_UNSUBSCRIBE:
+          // Handle unsubscribe
+          printf("Received UNSUBSCRIBE command\n");
+          break;
+        default:
+          printf("Unknown command received\n");
+          break;
+      }
+    } else if (bytes_read == 0) {
+      // End of file
+      break;
+    } else {
+      perror("Failed to read from register FIFO");
+      break;
+    }
+  }
+
+  close(fifo_fd);
 
   for (unsigned int i = 0; i < max_threads; i++) {
     if (pthread_join(threads[i], NULL) != 0) {
@@ -287,7 +333,7 @@ int main(int argc, char **argv) {
   }
 
   jobs_directory = argv[1];
-  char *register_fifo_path = argv[4]; //FIXME LOPES
+  register_fifo_path = argv[4];
 
   char *endptr;
   max_backups = strtoul(argv[3], &endptr, 10);
