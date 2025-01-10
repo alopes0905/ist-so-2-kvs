@@ -34,13 +34,14 @@ int create_fifo(const char *fifo_path) {
     }
 
     // Create the FIFO
-    if (mkfifo(fifo_path, 0666) == -1) {
+    if (mkfifo(fifo_path, 0777) < 0) {
         perror("Failed to create FIFO");
         return -1;
     }
     return 0;
 }
 
+//FIXME - ABRIR TODOS OS PIPES
 int kvs_connect(char const *req_pipe_path, char const *resp_pipe_path,
                 char const *server_pipe_path, char const *notif_pipe_path,
                 int *notif_pipe) {
@@ -51,17 +52,17 @@ int kvs_connect(char const *req_pipe_path, char const *resp_pipe_path,
 
   //FIXME LOPES ALTERAR
   if (create_fifo(req_pipe_path) == -1) {
-    unlink(req_pipe_path); // Clean up
+    unlink(req_pipe_path);
       return 1;
   }
 
   if (create_fifo(resp_pipe_path) == -1) {
-      unlink(req_pipe_path); // Clean up previously created FIFOs
+      unlink(req_pipe_path);
       return 1;
   }
 
   if (create_fifo(notif_pipe_path) == -1) {
-      unlink(resp_pipe_path); // Clean up
+      unlink(resp_pipe_path);
       return 1;
   }
 
@@ -81,7 +82,7 @@ int kvs_connect(char const *req_pipe_path, char const *resp_pipe_path,
     return 1;
   }
 
-  close(server_fd);
+  close(server_fd); //FIXME - CLOSE?
   *notif_pipe = open(notif_pipe_path, O_RDONLY | O_NONBLOCK);
   if (*notif_pipe == -1) {
     perror("Failed to open notification pipe");
@@ -89,7 +90,6 @@ int kvs_connect(char const *req_pipe_path, char const *resp_pipe_path,
     return 1;
   }
   return 0;
-
 }
 
 int kvs_disconnect(void) {

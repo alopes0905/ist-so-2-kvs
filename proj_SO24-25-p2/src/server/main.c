@@ -286,6 +286,7 @@ int main(int argc, char **argv) {
   }
 
   jobs_directory = argv[1];
+  char *register_fifo_path = argv[4]; //FIXME LOPES
 
   char *endptr;
   max_backups = strtoul(argv[3], &endptr, 10);
@@ -316,7 +317,21 @@ int main(int argc, char **argv) {
     write_str(STDERR_FILENO, "Failed to initialize KVS\n");
     return 1;
   }
-
+  
+  //FIXME LOPES
+  if (access(register_fifo_path, F_OK) == 0) {
+    if (unlink(register_fifo_path) == -1) {
+        perror("Failed to remove existing register FIFO");
+        return 1;
+    }
+  }
+  
+  if (mkfifo(register_fifo_path, 0777) < 0) {
+    write_str(STDERR_FILENO, "Failed to create register fifo\n");
+    return 1;
+  }
+  //FIXME LOPES
+  
   DIR *dir = opendir(argv[1]);
   if (dir == NULL) {
     fprintf(stderr, "Failed to open directory: %s\n", argv[1]);
