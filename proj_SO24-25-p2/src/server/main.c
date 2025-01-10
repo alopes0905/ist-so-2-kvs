@@ -300,7 +300,7 @@ static void dispatch_threads(DIR *dir) { //EDITAR ??
           continue;
       }
     } else if (bytes_read == 0) {
-      // End of file
+      printf("NOT EOF\n");
       break;
     } else {
       perror("Failed to read from register FIFO");
