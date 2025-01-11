@@ -42,6 +42,52 @@ int create_fifo(const char *fifo_path) {
     return 0;
 }
 
+void responsePrint(const char *operation, int fifo_fd) {
+  char response[2];
+
+  if (read(fifo_fd, response, sizeof(response)) == -1) {
+      perror("Failed to read from response pipe");
+      close(fifo_fd);
+      cleanup_pipes();
+      return;
+    }
+    close(fifo_fd);
+
+    printf("Server returned %d for operation: %s\n", response[1], operation);
+    return;
+}
+
+void await_response() {
+  int fifo_fd = open(respPipePath, O_RDONLY);
+
+  char buffer[256];
+  while (1) {
+    ssize_t bytes_read = read(fifo_fd, buffer, sizeof(buffer));
+    if (bytes_read > 0) {
+      int opcode = buffer[0];
+      switch (opcode) {
+        case OP_CODE_CONNECT:
+          responsePrint("connect", fifo_fd);
+          return;
+
+        case OP_CODE_DISCONNECT:
+          responsePrint("disconnect", fifo_fd);
+          return;
+
+        case OP_CODE_SUBSCRIBE:
+          responsePrint("subscribe", fifo_fd);
+          return;
+
+        case OP_CODE_UNSUBSCRIBE:
+          responsePrint("unsubscribe", fifo_fd);
+          return;
+        
+        default:
+          continue;
+      }
+    }
+  }
+}
 //FIXME - ABRIR TODOS OS PIPES
 int kvs_connect(char const *req_pipe_path, char const *resp_pipe_path,
                 char const *server_pipe_path, char const *notif_pipe_path,
@@ -85,6 +131,8 @@ int kvs_connect(char const *req_pipe_path, char const *resp_pipe_path,
   }
 
   close(server_fd); //FIXME - CLOSE?
+  await_response();
+  
   *notif_pipe = open(notif_pipe_path, O_RDONLY | O_NONBLOCK);
   if (*notif_pipe == -1) {
     perror("Failed to open notification pipe");
@@ -111,23 +159,57 @@ int kvs_disconnect(void) {
     cleanup_pipes();
     return 1;
   }
+  
   close(server_fd); //FIXME - CLOSE?
-  printf("nigga1\n");
+  await_response();
   cleanup_pipes(); //FIXME - ERRORS?
-  printf("nigga2\n");
   return 0;
 }
 
 int kvs_subscribe(const char *key) {
   // send subscribe message to request pipe and wait for response in response
   // pipe
-  printf("Subscribing to key %s\n", key);
+  int server_fd = open(serverPipePath, O_WRONLY);
+  if (server_fd == -1) {
+    perror("Failed to open server pipe");
+    cleanup_pipes();
+    return 1;
+  }
+
+  char message[MAX_STRING_SIZE + 3];
+  snprintf(message, sizeof(message), "%c|%s", OP_CODE_SUBSCRIBE, key);
+  if (write(server_fd, message, sizeof(message)) == -1) {
+    perror("Failed to write to server pipe");
+    close(server_fd);
+    cleanup_pipes();
+    return 1;
+  }
+  
+  close(server_fd); //FIXME - CLOSE?
+  await_response();
   return 0;
 }
 
 int kvs_unsubscribe(const char *key) {
   // send unsubscribe message to request pipe and wait for response in response
   // pipe
-  printf("Unsubscribing from key %s\n", key);
+  int server_fd = open(serverPipePath, O_WRONLY);
+  if (server_fd == -1) {
+    perror("Failed to open server pipe");
+    cleanup_pipes();
+    return 1;
+  }
+
+  char message[MAX_STRING_SIZE + 3];
+  snprintf(message, sizeof(message), "%c|%s", OP_CODE_UNSUBSCRIBE, key);
+  if (write(server_fd, message, sizeof(message)) == -1) {
+    perror("Failed to write to server pipe");
+    close(server_fd);
+    cleanup_pipes();
+    return 1;
+  }
+  
+  close(server_fd); //FIXME - CLOSE?
+  await_response();
   return 0;
 }

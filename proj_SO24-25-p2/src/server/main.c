@@ -269,29 +269,89 @@ static void dispatch_threads(DIR *dir) { //EDITAR ??
     free(threads);
     return;
   }
+
+  int resp_fd;
+  char response[2];
   char buffer[256];
   while (1) {
     ssize_t bytes_read = read(fifo_fd, buffer, sizeof(buffer));
     if (bytes_read > 0) {
       int opcode = buffer[0];
-      switch (opcode) { // TODO getnext
+      switch (opcode) {
         case OP_CODE_CONNECT:
           // Handle connect
+          char req_pipe_path[MAX_STRING_SIZE];
+          char resp_pipe_path[MAX_STRING_SIZE];
+          char notif_pipe_path[MAX_STRING_SIZE];
+          sscanf(buffer + 1, "|%[^|]|%[^|]|%[^|]", req_pipe_path, resp_pipe_path, notif_pipe_path);
           printf("Received CONNECT command\n");
+
+          // Open the response pipe LOPES
+          resp_fd = open(resp_pipe_path, O_WRONLY);
+          if (resp_fd == -1) {
+            perror("Failed to open response pipe");
+            continue;
+          }
+
+          response[0] = OP_CODE_CONNECT;
+          response[1] = 0;
+          if (write(resp_fd, response, sizeof(response)) == -1) {
+            perror("Failed to write to response pipe");
+          }
+          close(resp_fd);
           continue;
 
         case OP_CODE_DISCONNECT:
           // Handle disconnect
+          resp_fd = open(resp_pipe_path, O_WRONLY);
+          if (resp_fd == -1) {
+            perror("Failed to open response pipe");
+            continue;
+          }
+
+          response[0] = OP_CODE_DISCONNECT;
+          response[1] = 0;
+          if (write(resp_fd, response, sizeof(response)) == -1) {
+            perror("Failed to write to response pipe");
+          }
+          close(resp_fd);
           printf("Received DISCONNECT command\n");
           break;
 
         case OP_CODE_SUBSCRIBE:
           // Handle subscribe
+          printf("NIGGA");
+          resp_fd = open(resp_pipe_path, O_WRONLY);
+          if (resp_fd == -1) {
+            perror("Failed to open response pipe");
+            continue;
+          }
+
+          response[0] = OP_CODE_SUBSCRIBE;
+          //TODO
+          response[1] = 0;
+          if (write(resp_fd, response, sizeof(response)) == -1) {
+            perror("Failed to write to response pipe");
+          }
+          close(resp_fd);
           printf("Received SUBSCRIBE command\n");
           continue;
 
         case OP_CODE_UNSUBSCRIBE:
           // Handle unsubscribe
+          resp_fd = open(resp_pipe_path, O_WRONLY);
+          if (resp_fd == -1) {
+            perror("Failed to open response pipe");
+            continue;
+          }
+
+          response[0] = OP_CODE_UNSUBSCRIBE;
+          //TODO
+          response[1] = 0;
+          if (write(resp_fd, response, sizeof(response)) == -1) {
+            perror("Failed to write to response pipe");
+          }
+          close(resp_fd);
           printf("Received UNSUBSCRIBE command\n");
           continue;
 
