@@ -281,7 +281,7 @@ static void dispatch_threads(DIR *dir) { //EDITAR ??
         continue;
 
       case OP_CODE_DISCONNECT:
-        kvs_disconnect();
+        // Handle disconnect
         printf("Received DISCONNECT command\n");
         break;
 
