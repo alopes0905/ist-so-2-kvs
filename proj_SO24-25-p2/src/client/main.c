@@ -41,71 +41,71 @@ int main(int argc, char *argv[]) {
 
   while (1) {
     switch (get_next(STDIN_FILENO)) {
-    case CMD_DISCONNECT:
-      if (kvs_disconnect() != 0) {
-        fprintf(stderr, "Failed to disconnect to the server\n");
-        return 1;
-      }
-      // TODO: end notifications thread - ALREADY IMPLEMENTED
-      pthread_cancel(notif_thread); //Lopes
-      pthread_join(notif_thread, NULL); //Lopes
-      printf("Disconnected from server\n");
-      return 0;
+      case CMD_DISCONNECT:
+        if (kvs_disconnect() != 0) {
+          fprintf(stderr, "Failed to disconnect to the server\n");
+          return 1;
+        }
+        // TODO: end notifications thread - ALREADY IMPLEMENTED
+        pthread_cancel(notif_thread); //Lopes
+        pthread_join(notif_thread, NULL); //Lopes
+        printf("Disconnected from server\n");
+        return 0;
 
-    case CMD_SUBSCRIBE:
-      num = parse_list(STDIN_FILENO, keys, 1, MAX_STRING_SIZE);
-      if (num == 0) {
+      case CMD_SUBSCRIBE:
+        num = parse_list(STDIN_FILENO, keys, 1, MAX_STRING_SIZE);
+        if (num == 0) {
+          fprintf(stderr, "Invalid command. See HELP for usage\n");
+          continue;
+        }
+
+        if (kvs_subscribe(keys[0])) {
+          fprintf(stderr, "Command subscribe failed\n");
+        }
+
+        break;
+
+      case CMD_UNSUBSCRIBE:
+        num = parse_list(STDIN_FILENO, keys, 1, MAX_STRING_SIZE);
+        if (num == 0) {
+          fprintf(stderr, "Invalid command. See HELP for usage\n");
+          continue;
+        }
+
+        if (kvs_unsubscribe(keys[0])) {
+          fprintf(stderr, "Command subscribe failed\n");
+        }
+
+        break;
+
+      case CMD_DELAY:
+        if (parse_delay(STDIN_FILENO, &delay_ms) == -1) {
+          fprintf(stderr, "Invalid command. See HELP for usage\n");
+          continue;
+        }
+
+        if (delay_ms > 0) {
+          printf("Waiting...\n");
+          delay(delay_ms);
+        }
+        break;
+
+      case CMD_INVALID:
         fprintf(stderr, "Invalid command. See HELP for usage\n");
-        continue;
-      }
+        break;
 
-      if (kvs_subscribe(keys[0])) {
-        fprintf(stderr, "Command subscribe failed\n");
-      }
+      case CMD_EMPTY:
+        break;
 
-      break;
-
-    case CMD_UNSUBSCRIBE:
-      num = parse_list(STDIN_FILENO, keys, 1, MAX_STRING_SIZE);
-      if (num == 0) {
-        fprintf(stderr, "Invalid command. See HELP for usage\n");
-        continue;
-      }
-
-      if (kvs_unsubscribe(keys[0])) {
-        fprintf(stderr, "Command subscribe failed\n");
-      }
-
-      break;
-
-    case CMD_DELAY:
-      if (parse_delay(STDIN_FILENO, &delay_ms) == -1) {
-        fprintf(stderr, "Invalid command. See HELP for usage\n");
-        continue;
-      }
-
-      if (delay_ms > 0) {
-        printf("Waiting...\n");
-        delay(delay_ms);
-      }
-      break;
-
-    case CMD_INVALID:
-      fprintf(stderr, "Invalid command. See HELP for usage\n");
-      break;
-
-    case CMD_EMPTY:
-      break;
-
-    case EOC:
-      // input should end in a disconnect, or it will loop here forever - ALREADY IMPLEMENTED
-      if (kvs_disconnect() != 0) {
-        fprintf(stderr, "Failed to disconnect to the server\n");
-        return 1;
-      }
-      pthread_cancel(notif_thread);
-      pthread_join(notif_thread, NULL);
-      break;
+      case EOC:
+        // input should end in a disconnect, or it will loop here forever - ALREADY IMPLEMENTED
+        if (kvs_disconnect() != 0) {
+          fprintf(stderr, "Failed to disconnect to the server\n");
+          return 1;
+        }
+        pthread_cancel(notif_thread);
+        pthread_join(notif_thread, NULL);
+        break;
     }
   }
 }

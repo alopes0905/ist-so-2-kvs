@@ -16,6 +16,7 @@
 char const *reqPipePath;
 char const *respPipePath;
 char const *notifPipePath;
+char const *serverPipePath;
 
 void cleanup_pipes() {
   unlink(reqPipePath);
@@ -49,6 +50,7 @@ int kvs_connect(char const *req_pipe_path, char const *resp_pipe_path,
   reqPipePath = req_pipe_path;
   respPipePath = resp_pipe_path;
   notifPipePath = notif_pipe_path;
+  serverPipePath = server_pipe_path;
 
   //FIXME LOPES ALTERAR
   if (create_fifo(req_pipe_path) == -1) {
@@ -93,8 +95,26 @@ int kvs_connect(char const *req_pipe_path, char const *resp_pipe_path,
 }
 
 int kvs_disconnect(void) {
+
+  int server_fd = open(serverPipePath, O_WRONLY);
+  if (server_fd == -1) {
+    perror("Failed to open server pipe");
+    cleanup_pipes();
+    return 1;
+  }
+
+  char message[2];
+  snprintf(message, sizeof(message), "%c", OP_CODE_DISCONNECT);
+  if (write(server_fd, message, sizeof(message)) == -1) {
+    perror("Failed to write to server pipe");
+    close(server_fd);
+    cleanup_pipes();
+    return 1;
+  }
+  close(server_fd); //FIXME - CLOSE?
+  printf("nigga1\n");
   cleanup_pipes(); //FIXME - ERRORS?
-  printf("nigga\n");
+  printf("nigga2\n");
   return 0;
 }
 
