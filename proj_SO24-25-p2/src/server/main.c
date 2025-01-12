@@ -16,6 +16,7 @@
 #include "pthread.h"
 #include "src/common/protocol.h"
 #include "src/common/io.h"
+#include "subscriptions.h"
 
 struct SharedData {
   DIR *dir;
@@ -320,15 +321,15 @@ static void dispatch_threads(DIR *dir) { //EDITAR ??
 
         case OP_CODE_SUBSCRIBE:
           // Handle subscribe
-          printf("NIGGA");
           resp_fd = open(resp_pipe_path, O_WRONLY);
           if (resp_fd == -1) {
             perror("Failed to open response pipe");
             continue;
           }
-
+          char key[MAX_STRING_SIZE];
+          sscanf(buffer + 1, "|%[^|]", key);
+          add_subscription(key, notif_pipe_path);
           response[0] = OP_CODE_SUBSCRIBE;
-          //TODO
           response[1] = 0;
           if (write(resp_fd, response, sizeof(response)) == -1) {
             perror("Failed to write to response pipe");
@@ -344,9 +345,9 @@ static void dispatch_threads(DIR *dir) { //EDITAR ??
             perror("Failed to open response pipe");
             continue;
           }
-
+          sscanf(buffer + 1, "|%[^|]", key);
+          remove_subscription(key, notif_pipe_path);
           response[0] = OP_CODE_UNSUBSCRIBE;
-          //TODO
           response[1] = 0;
           if (write(resp_fd, response, sizeof(response)) == -1) {
             perror("Failed to write to response pipe");

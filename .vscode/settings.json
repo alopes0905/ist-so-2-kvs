@@ -1,0 +1,7 @@
+{
+    "files.associations": {
+        "protocol.h": "c",
+        "iterator": "c",
+        "io.h": "c"
+    }
+}

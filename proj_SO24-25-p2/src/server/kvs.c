@@ -2,8 +2,11 @@
 
 #include <ctype.h>
 #include <stdlib.h>
+#include <stdio.h>
 
 #include "string.h"
+#include "subscriptions.h"
+
 
 // Hash function based on key initial.
 // @param key Lowercase alphabetical string.
@@ -54,6 +57,7 @@ int write_pair(HashTable *ht, const char *key, const char *value) {
   keyNode->value = strdup(value);   // Allocate memory for the value
   keyNode->next = ht->table[index]; // Link to existing nodes
   ht->table[index] = keyNode; // Place new key node at the start of the list
+  notify_subscribers(key, value); //TODO
   return 0;
 }
 
@@ -96,6 +100,7 @@ int delete_pair(HashTable *ht, const char *key) {
             keyNode->next; // Link the previous node to the next node
       }
       // Free the memory allocated for the key and value
+      notify_subscribers(keyNode->key, "DELETED");
       free(keyNode->key);
       free(keyNode->value);
       free(keyNode); // Free the key node itself

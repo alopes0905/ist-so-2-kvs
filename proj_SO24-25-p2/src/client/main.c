@@ -13,7 +13,6 @@
 pthread_t notif_thread;
 int notif_pipe;
 
-
 int main(int argc, char *argv[]) {
   if (argc < 3) {
     fprintf(stderr, "Usage: %s <client_unique_id> <register_pipe_path>\n", argv[0]);
@@ -37,6 +36,7 @@ int main(int argc, char *argv[]) {
     fprintf(stderr, "Failed to connect to the server\n");
     return 1;
   }
+
   while (1) {
     switch (get_next(STDIN_FILENO)) {
       case CMD_DISCONNECT:
@@ -45,7 +45,7 @@ int main(int argc, char *argv[]) {
           return 1;
         }
         // TODO: end notifications thread - ALREADY IMPLEMENTED
-        //pthread_cancel(notif_thread); //Lopes
+        pthread_cancel(notif_thread); //Lopes
         pthread_join(notif_thread, NULL); //Lopes
         return 0;
 

@@ -4,7 +4,7 @@
 #include "src/common/protocol.h"
 #include <fcntl.h>
 
-
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -18,13 +18,34 @@ char const *respPipePath;
 char const *notifPipePath;
 char const *serverPipePath;
 
+int *notifPipe;
+
 void cleanup_pipes() {
   unlink(reqPipePath);
   unlink(respPipePath);
   unlink(notifPipePath);
 }
 
-//FIXME ALTERAR LOPES
+void *notification_handler(void *arg) {
+    int notif_pipe = *(int *)arg;
+    char buffer[2 * MAX_STRING_SIZE + 2];
+
+    while (1) {
+        ssize_t bytes_read = read(notif_pipe, buffer, sizeof(buffer));
+        if (bytes_read > 0) {
+          char key[MAX_STRING_SIZE];
+            char value[MAX_STRING_SIZE];
+            sscanf(buffer, "%[^|]|%s", key, value);
+            if (strcmp(value, "DELETED") == 0) {
+                printf("(%s,DELETED)\n", key);
+            } else {
+                printf("(%s,%s)\n", key, value);
+            }
+        }
+    }
+    return NULL;
+}
+
 // Function to create a FIFO and handle reconnection
 int create_fifo(const char *fifo_path) {
     if (access(fifo_path, F_OK) == 0) { // Check if FIFO already exists
@@ -132,13 +153,14 @@ int kvs_connect(char const *req_pipe_path, char const *resp_pipe_path,
 
   close(server_fd); //FIXME - CLOSE?
   await_response();
-  
-  *notif_pipe = open(notif_pipe_path, O_RDONLY | O_NONBLOCK);
+
+  *notif_pipe = open(notifPipePath, O_RDONLY | O_NONBLOCK);
   if (*notif_pipe == -1) {
     perror("Failed to open notification pipe");
     cleanup_pipes();
     return 1;
   }
+  notifPipe = notif_pipe;
   return 0;
 }
 
@@ -187,6 +209,20 @@ int kvs_subscribe(const char *key) {
   
   close(server_fd); //FIXME - CLOSE?
   await_response();
+  /*
+  int*notif_pipe = open(notifPipePath, O_RDONLY | O_NONBLOCK);
+  if (*notif_pipe == -1) {
+    perror("Failed to open notification pipe");
+    cleanup_pipes();
+    return 1;
+  }
+  */
+  pthread_t notif_thread;
+  if (pthread_create(&notif_thread, NULL, notification_handler, notifPipe) != 0) {
+      perror("Failed to create notification thread");
+      cleanup_pipes();
+      return 1;
+  }
   return 0;
 }
 

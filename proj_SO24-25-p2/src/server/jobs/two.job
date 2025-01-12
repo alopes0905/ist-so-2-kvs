@@ -5,3 +5,9 @@ DELETE [g]
 WRITE [(i,ignacio)(j,joana)]
 WRITE [(k,katia)(l,leonel)]
 BACKUP
+WAIT 20000
+WRITE [(p,puta)(l,leonel)]
+WAIT 10000
+DELETE [p]
+WAIT 20000
+WRITE [(p,puta)]
