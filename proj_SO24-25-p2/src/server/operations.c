@@ -42,6 +42,18 @@ int kvs_terminate() {
   return 0;
 }
 
+int kvs_key_check(const char *key) {
+  if (kvs_table == NULL) {
+    fprintf(stderr, "KVS state must be initialized\n");
+    return 1;
+  }
+
+  pthread_rwlock_rdlock(&kvs_table->tablelock);
+  int result = key_exists(kvs_table, key);
+  pthread_rwlock_unlock(&kvs_table->tablelock);
+  return result;
+}
+
 int kvs_write(size_t num_pairs, char keys[][MAX_STRING_SIZE],
               char values[][MAX_STRING_SIZE]) {
   if (kvs_table == NULL) {

@@ -19,6 +19,11 @@ pthread_mutex_t subscriptions_mutex = PTHREAD_MUTEX_INITIALIZER;
 void add_subscription(const char *key, const char *notif_pipe_path) {
     pthread_mutex_lock(&subscriptions_mutex);
     Subscription *new_sub = malloc(sizeof(Subscription));
+    if (new_sub == NULL) {
+        perror("Failed to allocate memory for new subscription");
+        pthread_mutex_unlock(&subscriptions_mutex);
+        return;
+    }
     strncpy(new_sub->key, key, MAX_STRING_SIZE);
     strncpy(new_sub->notif_pipe_path, notif_pipe_path, MAX_STRING_SIZE);
     new_sub->next = subscriptions;
@@ -26,20 +31,23 @@ void add_subscription(const char *key, const char *notif_pipe_path) {
     pthread_mutex_unlock(&subscriptions_mutex);
 }
 
-void remove_subscription(const char *key, const char *notif_pipe_path) {
+int remove_subscription(const char *key, const char *notif_pipe_path) {
     pthread_mutex_lock(&subscriptions_mutex);
     Subscription **current = &subscriptions;
+    int subscription_exists = 0;
     while (*current) {
         Subscription *entry = *current;
         if (strncmp(entry->key, key, MAX_STRING_SIZE) == 0 &&
             strncmp(entry->notif_pipe_path, notif_pipe_path, MAX_STRING_SIZE) == 0) {
             *current = entry->next;
             free(entry);
+            subscription_exists = 1;
             break;
         }
         current = &entry->next;
     }
     pthread_mutex_unlock(&subscriptions_mutex);
+    return subscription_exists;
 }
 
 void notify_subscribers(const char *key, const char *value) {

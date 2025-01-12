@@ -22,6 +22,8 @@ struct HashTable *create_hash_table();
 
 int hash(const char *key);
 
+int key_exists(HashTable *ht, const char *key);
+
 // Writes a key value pair in the hash table.
 // @param ht The hash table.
 // @param key The key.

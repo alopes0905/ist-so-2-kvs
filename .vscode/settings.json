@@ -3,6 +3,7 @@
         "protocol.h": "c",
         "iterator": "c",
         "io.h": "c",
-        "types.h": "c"
+        "types.h": "c",
+        "__node_handle": "cpp"
     }
 }

@@ -290,73 +290,78 @@ void *host_task() {
 
 int sessions_receiver(SessionRequest request) {
   // Handle the session request
-        int resp_fd = open(request.resp_pipe_path, O_WRONLY);
-        if (resp_fd == -1) {
-            perror("Failed to open response pipe");
-        }
+  int resp_fd = open(request.resp_pipe_path, O_WRONLY);
+  if (resp_fd == -1) {
+      perror("Failed to open response pipe");
+  }
 
-        char response[2] = {OP_CODE_CONNECT, 0};
-        if (write(resp_fd, response, sizeof(response)) == -1) {
-            perror("Failed to write to response pipe");
-        }
-        close(resp_fd);
+  char response[2] = {OP_CODE_CONNECT, 0};
+  if (write(resp_fd, response, sizeof(response)) == -1) {
+      perror("Failed to write to response pipe");
+  }
+  close(resp_fd);
 
 
-        int req_fd = open(request.req_pipe_path, O_RDONLY);
-        if (req_fd == -1) {
-            perror("Failed to open request pipe");
-        }
-        char buffer[256];
-        char key[MAX_STRING_SIZE];
-        while (1) {
-          ssize_t bytes_read = read(req_fd, buffer, sizeof(buffer));
-          if (bytes_read > 0) {
-              int opcode = buffer[0];
-              switch (opcode) {
-                case OP_CODE_SUBSCRIBE: {
-                      sscanf(buffer + 1, "|%[^|]", key);
-                      add_subscription(key, request.notif_pipe_path);
-                      resp_fd = open(request.resp_pipe_path, O_WRONLY);
-                      if (resp_fd != -1) {
-                          response[0] = OP_CODE_SUBSCRIBE;
-                          response[1] = 0;
-                          write(resp_fd, response, sizeof(response));
-                          close(resp_fd);
-                      }
-                      printf("Received SUBSCRIBE command\n");
-                      break;
-                  }
-                  case OP_CODE_UNSUBSCRIBE: {
-                      sscanf(buffer + 1, "|%[^|]", key);
-                      remove_subscription(key, request.notif_pipe_path);
-                      resp_fd = open(request.resp_pipe_path, O_WRONLY);
-                      if (resp_fd != -1) {
-                          response[0] = OP_CODE_UNSUBSCRIBE;
-                          response[1] = 0;
-                          write(resp_fd, response, sizeof(response));
-                          close(resp_fd);
-                      }
-                      printf("Received UNSUBSCRIBE command\n");
-                      break;
-                  }
-                  case OP_CODE_DISCONNECT: {
-                      resp_fd = open(request.resp_pipe_path, O_WRONLY);
-                      if (resp_fd != -1) {
-                          response[0] = OP_CODE_DISCONNECT;
-                          response[1] = 0;
-                          write(resp_fd, response, sizeof(response));
-                          close(resp_fd);
-                      }
-                      close(req_fd);
-                      printf("Received DISCONNECT command\n");
-                      return 1;
-                  }
-                  default:
-                      fprintf(stderr, "Unknown opcode received: %d\n", opcode);
-                      break;
-              }
+  int req_fd = open(request.req_pipe_path, O_RDONLY);
+  if (req_fd == -1) {
+      perror("Failed to open request pipe");
+  }
+  char buffer[3];
+  char key[MAX_STRING_SIZE];
+  while (1) {
+    ssize_t bytes_read = read(req_fd, buffer, sizeof(buffer));
+    if (bytes_read > 0) {
+      int opcode = buffer[0];
+      switch (opcode) {
+        case OP_CODE_SUBSCRIBE: {
+          sscanf(buffer + 1, "|%[^|]", key);
+          response[0] = OP_CODE_SUBSCRIBE;
+          if (kvs_key_check(key)) {
+            response[1] = 1;
+            add_subscription(key, request.notif_pipe_path);
+          } 
+          else {
+            response[1] = 0;
           }
+          resp_fd = open(request.resp_pipe_path, O_WRONLY);
+          if (resp_fd != -1) {
+            write(resp_fd, response, sizeof(response));
+            close(resp_fd);
+          }
+          printf("Received SUBSCRIBE command\n");
+          break;
         }
+        case OP_CODE_UNSUBSCRIBE: {
+          sscanf(buffer + 1, "|%[^|]", key);
+          int subscription_exists = remove_subscription(key, request.notif_pipe_path);
+          resp_fd = open(request.resp_pipe_path, O_WRONLY);
+          if (resp_fd != -1) {
+            response[0] = OP_CODE_UNSUBSCRIBE;
+            response[1] = subscription_exists ? 0 : 1;
+            write(resp_fd, response, sizeof(response));
+            close(resp_fd);
+          }
+          printf("Received UNSUBSCRIBE command\n");
+          break;
+        }
+        case OP_CODE_DISCONNECT: {
+          resp_fd = open(request.resp_pipe_path, O_WRONLY);
+          if (resp_fd != -1) {
+            response[0] = OP_CODE_DISCONNECT;
+            response[1] = 0; //FIXME
+            write(resp_fd, response, sizeof(response));
+            close(resp_fd);
+          }
+          close(req_fd);
+          printf("Received DISCONNECT command\n");
+          return 1;
+        }
+        default:
+          fprintf(stderr, "Unknown opcode received: %d\n", opcode);
+          break;
+      }
+    }
+  }
 } 
 
 void *manager_task() {

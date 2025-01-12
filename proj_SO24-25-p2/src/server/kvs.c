@@ -34,6 +34,22 @@ struct HashTable *create_hash_table() {
   return ht;
 }
 
+int key_exists(HashTable *ht, const char *key) {
+  int index = hash(key);
+
+  // Search for the key node
+  KeyNode *keyNode = ht->table[index];
+
+  while (keyNode != NULL) {
+    if (strcmp(keyNode->key, key) == 0) {
+      return 1; // Key found
+    }
+    keyNode = keyNode->next; // Move to the next node
+  }
+
+  return 0; // Key not found
+}
+
 int write_pair(HashTable *ht, const char *key, const char *value) {
   int index = hash(key);
 
@@ -57,7 +73,7 @@ int write_pair(HashTable *ht, const char *key, const char *value) {
   keyNode->value = strdup(value);   // Allocate memory for the value
   keyNode->next = ht->table[index]; // Link to existing nodes
   ht->table[index] = keyNode; // Place new key node at the start of the list
-  notify_subscribers(key, value); //TODO
+  notify_subscribers(key, value);
   return 0;
 }
 

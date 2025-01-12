@@ -64,19 +64,9 @@ int create_fifo(const char *fifo_path) {
     return 0;
 }
 
-void responsePrint(const char *operation, int fifo_fd) {
-  char response[2];
-
-  if (read(fifo_fd, response, sizeof(response)) == -1) {
-      perror("Failed to read from response pipe");
-      close(fifo_fd);
-      cleanup_pipes();
-      return;
-    }
-    close(fifo_fd);
-
-    printf("Server returned %d for operation: %s\n", response[1], operation);
-    return;
+void responsePrint(const char *operation, int response) {
+  printf("Server returned %d for operation: %s\n", response, operation);
+  return;
 }
 
 void await_response() {
@@ -89,19 +79,19 @@ void await_response() {
       int opcode = buffer[0];
       switch (opcode) {
         case OP_CODE_CONNECT:
-          responsePrint("connect", fifo_fd);
+          responsePrint("connect", buffer[1]);
           return;
 
         case OP_CODE_DISCONNECT:
-          responsePrint("disconnect", fifo_fd);
+          responsePrint("disconnect", buffer[1]);
           return;
 
         case OP_CODE_SUBSCRIBE:
-          responsePrint("subscribe", fifo_fd);
+          responsePrint("subscribe", buffer[1]);
           return;
 
         case OP_CODE_UNSUBSCRIBE:
-          responsePrint("unsubscribe", fifo_fd);
+          responsePrint("unsubscribe", buffer[1]);
           return;
         
         default:

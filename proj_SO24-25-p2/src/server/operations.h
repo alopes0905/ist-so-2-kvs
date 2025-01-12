@@ -13,6 +13,8 @@ int kvs_init();
 /// @return 0 if the KVS state was terminated successfully, 1 otherwise.
 int kvs_terminate();
 
+int kvs_key_check(const char *key);
+
 /// Writes a key value pair to the KVS. If key already exists it is updated.
 /// @param num_pairs Number of pairs being written.
 /// @param keys Array of keys' strings.
