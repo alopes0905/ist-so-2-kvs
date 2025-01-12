@@ -10,4 +10,4 @@ WRITE [(p,puta)(l,leonel)]
 WAIT 10000
 DELETE [p]
 WAIT 20000
-WRITE [(p,puta)]
+WRITE [(p,puta)(l,leonel)]

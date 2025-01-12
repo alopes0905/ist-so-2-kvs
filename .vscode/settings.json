@@ -2,6 +2,7 @@
     "files.associations": {
         "protocol.h": "c",
         "iterator": "c",
-        "io.h": "c"
+        "io.h": "c",
+        "types.h": "c"
     }
 }

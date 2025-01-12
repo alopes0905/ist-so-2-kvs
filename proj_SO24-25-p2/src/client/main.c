@@ -10,7 +10,6 @@
 #include "src/common/constants.h"
 #include "src/common/io.h"
 
-pthread_t notif_thread;
 int notif_pipe;
 
 int main(int argc, char *argv[]) {
@@ -45,8 +44,6 @@ int main(int argc, char *argv[]) {
           return 1;
         }
         // TODO: end notifications thread - ALREADY IMPLEMENTED
-        pthread_cancel(notif_thread); //Lopes
-        pthread_join(notif_thread, NULL); //Lopes
         return 0;
 
       case CMD_SUBSCRIBE:
@@ -100,8 +97,6 @@ int main(int argc, char *argv[]) {
           fprintf(stderr, "Failed to disconnect to the server\n");
           break;
         }
-        pthread_cancel(notif_thread);
-        pthread_join(notif_thread, NULL);
         return 0;
     }
   }

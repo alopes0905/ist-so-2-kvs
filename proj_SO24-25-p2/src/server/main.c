@@ -8,6 +8,7 @@
 #include <sys/wait.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <semaphore.h>
 
 #include "constants.h"
 #include "io.h"
@@ -17,6 +18,7 @@
 #include "src/common/protocol.h"
 #include "src/common/io.h"
 #include "subscriptions.h"
+#include "src/common/constants.h"
 
 struct SharedData {
   DIR *dir;
@@ -24,9 +26,24 @@ struct SharedData {
   pthread_mutex_t directory_mutex;
 };
 
+//LOPES
+typedef struct {
+    char req_pipe_path[MAX_STRING_SIZE];
+    char resp_pipe_path[MAX_STRING_SIZE];
+    char notif_pipe_path[MAX_STRING_SIZE];
+} SessionRequest;
+
+SessionRequest session_buffer[MAX_SESSION_COUNT];
+int buffer_in = 0;
+int buffer_out = 0;
+
+sem_t empty_slots;
+sem_t full_slots;
+pthread_mutex_t buffer_mutex = PTHREAD_MUTEX_INITIALIZER;
+//LOPES
+
 pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t n_current_backups_lock = PTHREAD_MUTEX_INITIALIZER;
-
 size_t active_backups = 0; // Number of active backups
 size_t max_backups;        // Maximum allowed simultaneous backups
 size_t max_threads;        // Maximum allowed simultaneous threads
@@ -241,142 +258,182 @@ static void *get_file(void *arguments) {
   pthread_exit(NULL);
 }
 
-static void dispatch_threads(DIR *dir) { //EDITAR ??
-  pthread_t *threads = malloc(max_threads * sizeof(pthread_t));
-
-  if (threads == NULL) {
-    fprintf(stderr, "Failed to allocate memory for threads\n");
-    return;
-  }
-
-  struct SharedData thread_data = {dir, jobs_directory,
-                                   PTHREAD_MUTEX_INITIALIZER};
-
-  for (size_t i = 0; i < max_threads; i++) {
-    if (pthread_create(&threads[i], NULL, get_file, (void *)&thread_data) !=
-        0) {
-      fprintf(stderr, "Failed to create thread %zu\n", i);
-      pthread_mutex_destroy(&thread_data.directory_mutex);
-      free(threads);
-      return;
+//LOPES
+void *host_task() {
+    int fifo_fd = open(register_fifo_path, O_RDONLY);
+    if (fifo_fd == -1) {
+        perror("Failed to open register FIFO");
+        return NULL;
     }
-  }
 
-  // ler do FIFO de registo ALREADY IMPLEMENTED
-  int fifo_fd = open(register_fifo_path, O_RDONLY);
-  if (fifo_fd == -1) {
-    perror("Failed to open register FIFO");
-    pthread_mutex_destroy(&thread_data.directory_mutex);
-    free(threads);
-    return;
-  }
+    char buffer[256];
+    while (1) {
+      ssize_t bytes_read = read(fifo_fd, buffer, sizeof(buffer));
+      if (bytes_read > 0) {
+          SessionRequest request;
+          
+          sscanf(buffer + 1, "|%[^|]|%[^|]|%[^|]", request.req_pipe_path, request.resp_pipe_path, request.notif_pipe_path);
 
-  int resp_fd;
-  char response[2];
-  char buffer[256];
-  while (1) {
-    ssize_t bytes_read = read(fifo_fd, buffer, sizeof(buffer));
-    if (bytes_read > 0) {
-      int opcode = buffer[0];
-      switch (opcode) {
-        case OP_CODE_CONNECT:
-          // Handle connect
-          char req_pipe_path[MAX_STRING_SIZE];
-          char resp_pipe_path[MAX_STRING_SIZE];
-          char notif_pipe_path[MAX_STRING_SIZE];
-          sscanf(buffer + 1, "|%[^|]|%[^|]|%[^|]", req_pipe_path, resp_pipe_path, notif_pipe_path);
-          printf("Received CONNECT command\n");
+          sem_wait(&empty_slots);
+          pthread_mutex_lock(&buffer_mutex);
+          
+          session_buffer[buffer_in] = request;
+          buffer_in = (buffer_in + 1) % MAX_SESSION_COUNT;
 
-          // Open the response pipe LOPES
-          resp_fd = open(resp_pipe_path, O_WRONLY);
-          if (resp_fd == -1) {
-            perror("Failed to open response pipe");
-            continue;
-          }
-
-          response[0] = OP_CODE_CONNECT;
-          response[1] = 0;
-          if (write(resp_fd, response, sizeof(response)) == -1) {
-            perror("Failed to write to response pipe");
-          }
-          close(resp_fd);
-          continue;
-
-        case OP_CODE_DISCONNECT:
-          // Handle disconnect
-          resp_fd = open(resp_pipe_path, O_WRONLY);
-          if (resp_fd == -1) {
-            perror("Failed to open response pipe");
-            continue;
-          }
-
-          response[0] = OP_CODE_DISCONNECT;
-          response[1] = 0;
-          if (write(resp_fd, response, sizeof(response)) == -1) {
-            perror("Failed to write to response pipe");
-          }
-          close(resp_fd);
-          printf("Received DISCONNECT command\n");
-          break;
-
-        case OP_CODE_SUBSCRIBE:
-          // Handle subscribe
-          resp_fd = open(resp_pipe_path, O_WRONLY);
-          if (resp_fd == -1) {
-            perror("Failed to open response pipe");
-            continue;
-          }
-          char key[MAX_STRING_SIZE];
-          sscanf(buffer + 1, "|%[^|]", key);
-          add_subscription(key, notif_pipe_path);
-          response[0] = OP_CODE_SUBSCRIBE;
-          response[1] = 0;
-          if (write(resp_fd, response, sizeof(response)) == -1) {
-            perror("Failed to write to response pipe");
-          }
-          close(resp_fd);
-          printf("Received SUBSCRIBE command\n");
-          continue;
-
-        case OP_CODE_UNSUBSCRIBE:
-          // Handle unsubscribe
-          resp_fd = open(resp_pipe_path, O_WRONLY);
-          if (resp_fd == -1) {
-            perror("Failed to open response pipe");
-            continue;
-          }
-          sscanf(buffer + 1, "|%[^|]", key);
-          remove_subscription(key, notif_pipe_path);
-          response[0] = OP_CODE_UNSUBSCRIBE;
-          response[1] = 0;
-          if (write(resp_fd, response, sizeof(response)) == -1) {
-            perror("Failed to write to response pipe");
-          }
-          close(resp_fd);
-          printf("Received UNSUBSCRIBE command\n");
-          continue;
-
-        default:
-          printf("Unknown command received\n");
-          continue;
+          pthread_mutex_unlock(&buffer_mutex);
+          sem_post(&full_slots);
       }
     }
-  }
-  close(fifo_fd);
-
-  for (unsigned int i = 0; i < max_threads; i++) {
-    if (pthread_join(threads[i], NULL) != 0) {
-      fprintf(stderr, "Failed to join thread %u\n", i);
-      pthread_mutex_destroy(&thread_data.directory_mutex);
-      free(threads);
-      return;
-    }
-  }
-  if (pthread_mutex_destroy(&thread_data.directory_mutex) != 0) {
-    fprintf(stderr, "Failed to destroy directory_mutex\n");
-  }
-  free(threads);
+    close(fifo_fd);
+    return NULL;
 }
+
+int sessions_receiver(SessionRequest request) {
+  // Handle the session request
+        int resp_fd = open(request.resp_pipe_path, O_WRONLY);
+        if (resp_fd == -1) {
+            perror("Failed to open response pipe");
+        }
+
+        char response[2] = {OP_CODE_CONNECT, 0};
+        if (write(resp_fd, response, sizeof(response)) == -1) {
+            perror("Failed to write to response pipe");
+        }
+        close(resp_fd);
+
+
+        int req_fd = open(request.req_pipe_path, O_RDONLY);
+        if (req_fd == -1) {
+            perror("Failed to open request pipe");
+        }
+        char buffer[256];
+        char key[MAX_STRING_SIZE];
+        while (1) {
+          ssize_t bytes_read = read(req_fd, buffer, sizeof(buffer));
+          if (bytes_read > 0) {
+              int opcode = buffer[0];
+              switch (opcode) {
+                case OP_CODE_SUBSCRIBE: {
+                      sscanf(buffer + 1, "|%[^|]", key);
+                      add_subscription(key, request.notif_pipe_path);
+                      resp_fd = open(request.resp_pipe_path, O_WRONLY);
+                      if (resp_fd != -1) {
+                          response[0] = OP_CODE_SUBSCRIBE;
+                          response[1] = 0;
+                          write(resp_fd, response, sizeof(response));
+                          close(resp_fd);
+                      }
+                      printf("Received SUBSCRIBE command\n");
+                      break;
+                  }
+                  case OP_CODE_UNSUBSCRIBE: {
+                      sscanf(buffer + 1, "|%[^|]", key);
+                      remove_subscription(key, request.notif_pipe_path);
+                      resp_fd = open(request.resp_pipe_path, O_WRONLY);
+                      if (resp_fd != -1) {
+                          response[0] = OP_CODE_UNSUBSCRIBE;
+                          response[1] = 0;
+                          write(resp_fd, response, sizeof(response));
+                          close(resp_fd);
+                      }
+                      printf("Received UNSUBSCRIBE command\n");
+                      break;
+                  }
+                  case OP_CODE_DISCONNECT: {
+                      resp_fd = open(request.resp_pipe_path, O_WRONLY);
+                      if (resp_fd != -1) {
+                          response[0] = OP_CODE_DISCONNECT;
+                          response[1] = 0;
+                          write(resp_fd, response, sizeof(response));
+                          close(resp_fd);
+                      }
+                      close(req_fd);
+                      printf("Received DISCONNECT command\n");
+                      return 1;
+                  }
+                  default:
+                      fprintf(stderr, "Unknown opcode received: %d\n", opcode);
+                      break;
+              }
+          }
+        }
+} 
+
+void *manager_task() {
+    while (1) {
+      sem_wait(&full_slots);
+      pthread_mutex_lock(&buffer_mutex);
+
+      SessionRequest request = session_buffer[buffer_out];
+      buffer_out = (buffer_out + 1) % MAX_SESSION_COUNT;
+
+      pthread_mutex_unlock(&buffer_mutex);
+      sem_post(&empty_slots);
+
+      sessions_receiver(request);
+    }
+    return NULL;
+}
+//LOPES
+void dispatch_threads(DIR *dir) {
+    pthread_t *threads = malloc(max_threads * sizeof(pthread_t));
+    if (threads == NULL) {
+        fprintf(stderr, "Failed to allocate memory for threads\n");
+        return;
+    }
+
+    struct SharedData thread_data = {dir, jobs_directory, PTHREAD_MUTEX_INITIALIZER};
+
+    for (size_t i = 0; i < max_threads; i++) {
+        if (pthread_create(&threads[i], NULL, get_file, (void *)&thread_data) != 0) {
+            fprintf(stderr, "Failed to create thread %zu\n", i);
+            pthread_mutex_destroy(&thread_data.directory_mutex);
+            free(threads);
+            return;
+        }
+    }
+
+    pthread_t host_thread;
+    pthread_t manager_threads[MAX_SESSION_COUNT];
+
+    sem_init(&empty_slots, 0, MAX_SESSION_COUNT);
+    sem_init(&full_slots, 0, 0);
+
+    if (pthread_create(&host_thread, NULL, host_task, NULL) != 0) {
+        fprintf(stderr, "Failed to create host thread\n");
+        return;
+    }
+
+    for (size_t i = 0; i < MAX_SESSION_COUNT; i++) {
+        if (pthread_create(&manager_threads[i], NULL, manager_task, NULL) != 0) {
+          fprintf(stderr, "Failed to create manager thread %zu\n", i);
+          return;
+        }
+    }
+
+    pthread_join(host_thread, NULL);
+    for (size_t i = 0; i < MAX_SESSION_COUNT; i++) {
+        pthread_join(manager_threads[i], NULL);
+    }
+
+    for (unsigned int i = 0; i < max_threads; i++) {
+        if (pthread_join(threads[i], NULL) != 0) {
+            fprintf(stderr, "Failed to join thread %u\n", i);
+            pthread_mutex_destroy(&thread_data.directory_mutex);
+            free(threads);
+            return;
+        }
+    }
+    if (pthread_mutex_destroy(&thread_data.directory_mutex) != 0) {
+        fprintf(stderr, "Failed to destroy directory_mutex\n");
+    }
+    free(threads);
+
+    sem_destroy(&empty_slots);
+    sem_destroy(&full_slots);
+}
+//LOPES
+
 
 int main(int argc, char **argv) {
   if (argc < 4) {

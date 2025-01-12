@@ -7,3 +7,8 @@
 TO CHECK REQUEST PIPE INSTEAD OF REGISTER PIPE IN MAIN SERVER (DISPATCH_THREADS WHILE) and API
 ERRORS IN CONNECT OR DISCONNECT (RESPONSE = 0 or RESPONSE = 1)
 OVERWRITE NOT POSSIBLE IN KVS_WRITE?
+
+O  servidor  aceita  no  máximo  S  sessões  em  simultâneo,  em  que  S  é  uma  constante  definida 
+ no  código  do  servidor.  Isto  implica  que  o  servidor,  quando  recebe  um  novo  pedido  de  início 
+ de  sessão  e  tem  S  sessões  ativas,  deve  bloquear,  esperando  que  uma  sessão  termine  para 
+ que possa criar a nova.

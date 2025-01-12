@@ -19,6 +19,7 @@ char const *notifPipePath;
 char const *serverPipePath;
 
 int *notifPipe;
+pthread_t notif_thread;
 
 void cleanup_pipes() {
   unlink(reqPipePath);
@@ -34,13 +35,13 @@ void *notification_handler(void *arg) {
         ssize_t bytes_read = read(notif_pipe, buffer, sizeof(buffer));
         if (bytes_read > 0) {
           char key[MAX_STRING_SIZE];
-            char value[MAX_STRING_SIZE];
-            sscanf(buffer, "%[^|]|%s", key, value);
-            if (strcmp(value, "DELETED") == 0) {
-                printf("(%s,DELETED)\n", key);
-            } else {
-                printf("(%s,%s)\n", key, value);
-            }
+          char value[MAX_STRING_SIZE];
+          sscanf(buffer, "%[^|]|%s", key, value);
+          if (strcmp(value, "DELETED") == 0) {
+            printf("(%s,DELETED)\n", key);
+          } else {
+            printf("(%s,%s)\n", key, value);
+          }
         }
     }
     return NULL;
@@ -161,13 +162,18 @@ int kvs_connect(char const *req_pipe_path, char const *resp_pipe_path,
     return 1;
   }
   notifPipe = notif_pipe;
+  if (pthread_create(&notif_thread, NULL, notification_handler, notifPipe) != 0) {
+      perror("Failed to create notification thread");
+      cleanup_pipes();
+      return 1;
+  }
   return 0;
 }
 
 int kvs_disconnect(void) {
 
-  int server_fd = open(serverPipePath, O_WRONLY);
-  if (server_fd == -1) {
+  int req_fd = open(reqPipePath, O_WRONLY);
+  if (req_fd == -1) {
     perror("Failed to open server pipe");
     cleanup_pipes();
     return 1;
@@ -175,14 +181,14 @@ int kvs_disconnect(void) {
 
   char message[2];
   snprintf(message, sizeof(message), "%c", OP_CODE_DISCONNECT);
-  if (write(server_fd, message, sizeof(message)) == -1) {
+  if (write(req_fd, message, sizeof(message)) == -1) {
     perror("Failed to write to server pipe");
-    close(server_fd);
+    close(req_fd);
     cleanup_pipes();
     return 1;
   }
   
-  close(server_fd); //FIXME - CLOSE?
+  close(req_fd); //FIXME - CLOSE?
   await_response();
   cleanup_pipes(); //FIXME - ERRORS?
   return 0;
@@ -191,8 +197,8 @@ int kvs_disconnect(void) {
 int kvs_subscribe(const char *key) {
   // send subscribe message to request pipe and wait for response in response
   // pipe
-  int server_fd = open(serverPipePath, O_WRONLY);
-  if (server_fd == -1) {
+  int req_fd = open(reqPipePath, O_WRONLY);
+  if (req_fd == -1) {
     perror("Failed to open server pipe");
     cleanup_pipes();
     return 1;
@@ -200,14 +206,14 @@ int kvs_subscribe(const char *key) {
 
   char message[MAX_STRING_SIZE + 3];
   snprintf(message, sizeof(message), "%c|%s", OP_CODE_SUBSCRIBE, key);
-  if (write(server_fd, message, sizeof(message)) == -1) {
+  if (write(req_fd, message, sizeof(message)) == -1) {
     perror("Failed to write to server pipe");
-    close(server_fd);
+    close(req_fd);
     cleanup_pipes();
     return 1;
   }
   
-  close(server_fd); //FIXME - CLOSE?
+  close(req_fd); //FIXME - CLOSE?
   await_response();
   /*
   int*notif_pipe = open(notifPipePath, O_RDONLY | O_NONBLOCK);
@@ -217,20 +223,15 @@ int kvs_subscribe(const char *key) {
     return 1;
   }
   */
-  pthread_t notif_thread;
-  if (pthread_create(&notif_thread, NULL, notification_handler, notifPipe) != 0) {
-      perror("Failed to create notification thread");
-      cleanup_pipes();
-      return 1;
-  }
+
   return 0;
 }
 
 int kvs_unsubscribe(const char *key) {
   // send unsubscribe message to request pipe and wait for response in response
   // pipe
-  int server_fd = open(serverPipePath, O_WRONLY);
-  if (server_fd == -1) {
+  int req_fd = open(reqPipePath, O_WRONLY);
+  if (req_fd == -1) {
     perror("Failed to open server pipe");
     cleanup_pipes();
     return 1;
@@ -238,14 +239,14 @@ int kvs_unsubscribe(const char *key) {
 
   char message[MAX_STRING_SIZE + 3];
   snprintf(message, sizeof(message), "%c|%s", OP_CODE_UNSUBSCRIBE, key);
-  if (write(server_fd, message, sizeof(message)) == -1) {
+  if (write(req_fd, message, sizeof(message)) == -1) {
     perror("Failed to write to server pipe");
-    close(server_fd);
+    close(req_fd);
     cleanup_pipes();
     return 1;
   }
   
-  close(server_fd); //FIXME - CLOSE?
+  close(req_fd); //FIXME - CLOSE?
   await_response();
   return 0;
 }
