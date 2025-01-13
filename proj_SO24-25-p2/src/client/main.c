@@ -20,11 +20,9 @@ void *notification_handler() {
     while (1) {
         ssize_t bytes_read = read(notif_pipe, buffer, sizeof(buffer));
         if (bytes_read > 0) {
-          printf("Notification received: ");
           char key[MAX_STRING_SIZE];
           char value[MAX_STRING_SIZE];
           sscanf(buffer, "%[^|]|%s", key, value);
-          //FIXME
           if (strcmp(value, "kill") == 0 && strcmp(key, "-1") == 0) {
             signal_catched = 1;
             if (kvs_kill()) {
@@ -38,15 +36,6 @@ void *notification_handler() {
             printf("(%s,%s)\n", key, value);
           }
         }
-        /*
-        else {
-          signal_catched = 1;
-          if (kvs_kill()) {
-            pthread_exit(NULL);
-          }
-          return (void *)1;
-        }
-        */
     }
     return NULL;
 }

@@ -10,8 +10,7 @@
 
 typedef struct Subscription {
     char key[MAX_STRING_SIZE];
-    //char notif_pipe_path[MAX_STRING_SIZE]; MONTEIRO
-    int notif_fd; //MONTEIRO
+    int notif_fd;
     struct Subscription *next;
 } Subscription;
 

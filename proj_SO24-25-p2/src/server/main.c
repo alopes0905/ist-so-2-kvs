@@ -28,16 +28,17 @@ struct SharedData {
 };
 
 typedef struct {
+    int active;
     char req_pipe_path[MAX_STRING_SIZE];
     char resp_pipe_path[MAX_STRING_SIZE];
     char notif_pipe_path[MAX_STRING_SIZE];
     int req_fd;
     int resp_fd;
     int notif_fd;
-    int active;
 } SessionRequest;
 
 SessionRequest session_buffer[MAX_SESSION_COUNT];
+SessionRequest wait_buffer[MAX_SESSION_COUNT];
 int buffer_out = 0;
 
 sem_t empty_slots;
@@ -257,7 +258,6 @@ static void *get_file(void *arguments) {
       return NULL;
     }
   }
-  run_job(STDIN_FILENO, STDOUT_FILENO, "stdin"); //NIGGA TIRAR
 
   if (pthread_mutex_unlock(&thread_data->directory_mutex) != 0) {
     fprintf(stderr, "Thread failed to unlock directory_mutex\n");
@@ -277,15 +277,10 @@ void *host_task() {
     char buffer[MAX_WRITE_SIZE];
     while (1) {
       if (sigusr1_received) {
-
-        printf("Received SIGUSR1\n");
         handle_signal();
         
         for (int i = 0; i < MAX_SESSION_COUNT; i++) {
-          printf("Active inicial: %d, Valor do i: %d\n", session_buffer[i].active, i);
-          printf("RESP: %d\n", session_buffer[i].resp_fd);
           if (session_buffer[i].active) {
-            printf("OIOIOIOI\n");
             pthread_mutex_lock(&buffer_mutex);
             if (session_buffer[i].resp_fd != -1) {
                 close(session_buffer[i].resp_fd);
@@ -298,19 +293,19 @@ void *host_task() {
                 session_buffer[i].notif_fd = -1;
             }
             session_buffer[i].active = 0;
-            printf("0\n");
             pthread_mutex_unlock(&buffer_mutex);
           }
-          printf("Active final: %d\n", session_buffer[i].active);
         }
         sigusr1_received = 0;
       }
 
       ssize_t bytes_read = read(fifo_fd, buffer, sizeof(buffer));
       if (bytes_read > 0) {
-
+        int index = 0;
         sem_wait(&empty_slots);
         pthread_mutex_lock(&buffer_mutex);
+        sem_getvalue(&full_slots, &index);
+
 
         SessionRequest request;
         
@@ -321,9 +316,8 @@ void *host_task() {
         request.resp_fd = open(request.resp_pipe_path, O_WRONLY);
         request.notif_fd = open(request.notif_pipe_path, O_WRONLY);
 
-        printf("resp_fd: %d\n", request.resp_fd);
         
-        session_buffer[buffer_out] = request;
+        wait_buffer[index] = request;
 
         pthread_mutex_unlock(&buffer_mutex);
         sem_post(&full_slots);
@@ -340,7 +334,6 @@ int sessions_receiver(SessionRequest request) {
   if (write(request.resp_fd, response, sizeof(response)) == -1) {
       perror("Failed to write to response pipe");
   }
-  printf("Received CONNECT command\n");
 
   if (request.req_fd == -1) {
       perror("Failed to open request pipe");
@@ -368,7 +361,6 @@ int sessions_receiver(SessionRequest request) {
           if (request.resp_fd != -1) {
             write(request.resp_fd, response, sizeof(response));
           }
-          printf("Received SUBSCRIBE command\n");
           break;
         }
         case OP_CODE_UNSUBSCRIBE: {
@@ -381,7 +373,6 @@ int sessions_receiver(SessionRequest request) {
             write(request.resp_fd, response, sizeof(response));
 
           }
-          printf("Received UNSUBSCRIBE command\n");
           break;
         }
         case OP_CODE_DISCONNECT: {
@@ -389,13 +380,10 @@ int sessions_receiver(SessionRequest request) {
             response[0] = OP_CODE_DISCONNECT;
             response[1] = 0;
             write(request.resp_fd, response, sizeof(response));
-            request.active = 0;
-            printf("0\n");
             close(request.resp_fd);
             close(request.req_fd);
             close(request.notif_fd);
           }
-          printf("Received DISCONNECT command\n");
           return 1;
         }
         default:
@@ -405,7 +393,6 @@ int sessions_receiver(SessionRequest request) {
       return 1;
     }
   }
-  request.active = 0;
   sem_post(&empty_slots);
   return 1;
 } 
@@ -421,13 +408,30 @@ void *manager_task() {
     pthread_mutex_lock(&buffer_mutex);
     sem_getvalue(&full_slots, &index);
 
-    SessionRequest request = session_buffer[index];
-    request.active = 1;
+    SessionRequest request = wait_buffer[index];
 
     pthread_mutex_unlock(&buffer_mutex);
     sem_post(&empty_slots);
-    sessions_receiver(request);
 
+    int session_index = -1;
+    for (int i = 0; i < MAX_SESSION_COUNT; i++) {
+      if (!session_buffer[i].active) {
+        session_index = i;
+        break;
+      }
+    }
+    if (session_index != -1) {
+      strncpy(session_buffer[session_index].req_pipe_path, request.req_pipe_path, MAX_PIPE_PATH_LENGTH);
+      strncpy(session_buffer[session_index].resp_pipe_path, request.resp_pipe_path, MAX_PIPE_PATH_LENGTH);
+      strncpy(session_buffer[session_index].notif_pipe_path, request.notif_pipe_path, MAX_PIPE_PATH_LENGTH);
+      session_buffer[session_index].req_fd = request.req_fd;
+      session_buffer[session_index].resp_fd = request.resp_fd;
+      session_buffer[session_index].notif_fd = request.notif_fd;
+      session_buffer[session_index].active = 1;
+
+      sessions_receiver(session_buffer[session_index]);
+      session_buffer[session_index].active = 0;
+    }
   }
   return NULL;
 }
@@ -508,10 +512,7 @@ int main(int argc, char **argv) {
   sa.sa_handler = handle_sigusr1;
   sigemptyset(&sa.sa_mask);
   sa.sa_flags = 0;
-  if (sigaction(SIGUSR1, &sa, NULL) == -1) {
-      perror("sigaction");
-      exit(1);
-  }
+  sigaction(SIGUSR1, &sa, NULL);
 
   jobs_directory = argv[1];
   unlink(argv[4]);

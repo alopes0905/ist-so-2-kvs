@@ -68,7 +68,7 @@ void await_response() {
     }
   }
 }
-//FIXME - ABRIR TODOS OS PIPES
+
 int kvs_connect(char const *req_pipe_path, char const *resp_pipe_path,
                 char const *server_pipe_path, char const *notif_pipe_path,
                 int *notif_pipe) {
@@ -81,7 +81,6 @@ int kvs_connect(char const *req_pipe_path, char const *resp_pipe_path,
   notifPipePath = notif_pipe_path;
   serverPipePath = server_pipe_path;
 
-  //FIXME LOPES ALTERAR
   if (create_fifo(req_pipe_path) == -1) {
     unlink(req_pipe_path);
     return 1;
