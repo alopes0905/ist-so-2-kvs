@@ -46,9 +46,9 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  char req_pipe_path[256] = "/tmp/req";
-  char resp_pipe_path[256] = "/tmp/resp";
-  char notif_pipe_path[256] = "/tmp/notif";
+  char req_pipe_path[256] = "/tmp/req_SO";
+  char resp_pipe_path[256] = "/tmp/resp_SO";
+  char notif_pipe_path[256] = "/tmp/notif_SO";
 
   char keys[MAX_NUMBER_SUB][MAX_STRING_SIZE] = {0};
   unsigned int delay_ms;
