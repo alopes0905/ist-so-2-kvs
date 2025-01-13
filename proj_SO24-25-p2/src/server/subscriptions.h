@@ -1,5 +1,8 @@
 #ifndef SUBSCRIPTIONS_H
 #define SUBSCRIPTIONS_H
+#include "src/common/constants.h"
+
+void handle_signal();
 
 void add_subscription(const char *key, const char *notif_pipe_path);
 

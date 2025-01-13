@@ -16,6 +16,18 @@ typedef struct Subscription {
 Subscription *subscriptions = NULL;
 pthread_mutex_t subscriptions_mutex = PTHREAD_MUTEX_INITIALIZER;
 
+void handle_signal() {
+    pthread_mutex_lock(&subscriptions_mutex);
+    Subscription *current = subscriptions;
+    while (current) {
+        Subscription *next = current->next;
+        free(current);
+        current = next;
+    }
+    subscriptions = NULL;
+    pthread_mutex_unlock(&subscriptions_mutex);
+}
+
 void add_subscription(const char *key, const char *notif_pipe_path) {
     pthread_mutex_lock(&subscriptions_mutex);
     Subscription *new_sub = malloc(sizeof(Subscription));

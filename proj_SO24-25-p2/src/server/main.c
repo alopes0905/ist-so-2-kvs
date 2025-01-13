@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <signal.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <sys/stat.h>
@@ -26,7 +27,6 @@ struct SharedData {
   pthread_mutex_t directory_mutex;
 };
 
-//LOPES
 typedef struct {
     char req_pipe_path[MAX_STRING_SIZE];
     char resp_pipe_path[MAX_STRING_SIZE];
@@ -40,7 +40,6 @@ int buffer_out = 0;
 sem_t empty_slots;
 sem_t full_slots;
 pthread_mutex_t buffer_mutex = PTHREAD_MUTEX_INITIALIZER;
-//LOPES
 
 pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t n_current_backups_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -49,6 +48,13 @@ size_t max_backups;        // Maximum allowed simultaneous backups
 size_t max_threads;        // Maximum allowed simultaneous threads
 char *jobs_directory = NULL;
 char *register_fifo_path = NULL;
+
+volatile sig_atomic_t sigusr1_received = 0;
+
+void handle_sigusr1() {
+  sigusr1_received = 1;
+  printf("Received SIGUSR1\n");
+}
 
 int filter_job_files(const struct dirent *entry) {
   const char *dot = strrchr(entry->d_name, '.');
@@ -268,6 +274,13 @@ void *host_task() {
 
     char buffer[256];
     while (1) {
+      if (sigusr1_received) {
+        
+        printf("Received SIGUSR1\n");
+        handle_signal();
+
+        sigusr1_received = 0;
+      }
       ssize_t bytes_read = read(fifo_fd, buffer, sizeof(buffer));
       if (bytes_read > 0) {
           SessionRequest request;
@@ -306,7 +319,7 @@ int sessions_receiver(SessionRequest request) {
   if (req_fd == -1) {
       perror("Failed to open request pipe");
   }
-  char buffer[3];
+  char buffer[256];
   char key[MAX_STRING_SIZE];
   while (1) {
     ssize_t bytes_read = read(req_fd, buffer, sizeof(buffer));
@@ -365,21 +378,25 @@ int sessions_receiver(SessionRequest request) {
 } 
 
 void *manager_task() {
-    while (1) {
-      sem_wait(&full_slots);
-      pthread_mutex_lock(&buffer_mutex);
+  sigset_t set;
+  sigemptyset(&set);
+  sigaddset(&set, SIGUSR1);
+  pthread_sigmask(SIG_BLOCK, &set, NULL);
+  while (1) {
+    sem_wait(&full_slots);
+    pthread_mutex_lock(&buffer_mutex);
 
-      SessionRequest request = session_buffer[buffer_out];
-      buffer_out = (buffer_out + 1) % MAX_SESSION_COUNT;
+    SessionRequest request = session_buffer[buffer_out];
+    buffer_out = (buffer_out + 1) % MAX_SESSION_COUNT;
 
-      pthread_mutex_unlock(&buffer_mutex);
-      sem_post(&empty_slots);
+    pthread_mutex_unlock(&buffer_mutex);
+    sem_post(&empty_slots);
 
-      sessions_receiver(request);
-    }
-    return NULL;
+    sessions_receiver(request);
+  }
+  return NULL;
 }
-//LOPES
+
 void dispatch_threads(DIR *dir) {
     pthread_t *threads = malloc(max_threads * sizeof(pthread_t));
     if (threads == NULL) {
@@ -437,7 +454,7 @@ void dispatch_threads(DIR *dir) {
     sem_destroy(&empty_slots);
     sem_destroy(&full_slots);
 }
-//LOPES
+
 
 
 int main(int argc, char **argv) {
@@ -448,6 +465,17 @@ int main(int argc, char **argv) {
     write_str(STDERR_FILENO, " <max_threads>");
     write_str(STDERR_FILENO, " <max_backups> \n");
     return 1;
+  }
+
+  // Configurar o manipulador de sinal para SIGUSR1
+  struct sigaction sa;
+  memset(&sa, 0, sizeof(sa));
+  sa.sa_handler = handle_sigusr1;
+  sigemptyset(&sa.sa_mask);
+  sa.sa_flags = 0;
+  if (sigaction(SIGUSR1, &sa, NULL) == -1) {
+      perror("sigaction");
+      exit(1);
   }
 
   jobs_directory = argv[1];
