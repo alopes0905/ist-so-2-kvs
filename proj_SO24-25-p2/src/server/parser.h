@@ -4,6 +4,7 @@
 #include <stddef.h>
 
 #include "constants.h"
+#include "src/common/constants.h"
 
 enum Command {
   CMD_WRITE,

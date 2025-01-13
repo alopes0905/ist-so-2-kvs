@@ -31,4 +31,6 @@ int kvs_subscribe(const char *key);
 
 int kvs_unsubscribe(const char *key);
 
+int kvs_kill(void);
+
 #endif // CLIENT_API_H

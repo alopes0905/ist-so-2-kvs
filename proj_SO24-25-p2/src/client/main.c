@@ -11,6 +11,45 @@
 #include "src/common/io.h"
 
 int notif_pipe;
+pthread_t notif_thread;
+int signal_catched = 0;
+
+void *notification_handler() {
+    char buffer[2 * MAX_STRING_SIZE + 2];
+
+    while (1) {
+        ssize_t bytes_read = read(notif_pipe, buffer, sizeof(buffer));
+        if (bytes_read > 0) {
+          printf("Notification received: ");
+          char key[MAX_STRING_SIZE];
+          char value[MAX_STRING_SIZE];
+          sscanf(buffer, "%[^|]|%s", key, value);
+          //FIXME
+          if (strcmp(value, "kill") == 0 && strcmp(key, "-1") == 0) {
+            signal_catched = 1;
+            if (kvs_kill()) {
+              pthread_exit(NULL);
+            }
+            return (void *)1;
+          }
+          if (strcmp(value, "DELETED") == 0) {
+            printf("(%s,DELETED)\n", key);
+          } else {
+            printf("(%s,%s)\n", key, value);
+          }
+        }
+        /*
+        else {
+          signal_catched = 1;
+          if (kvs_kill()) {
+            pthread_exit(NULL);
+          }
+          return (void *)1;
+        }
+        */
+    }
+    return NULL;
+}
 
 int main(int argc, char *argv[]) {
   if (argc < 3) {
@@ -30,20 +69,25 @@ int main(int argc, char *argv[]) {
   strncat(resp_pipe_path, argv[1], strlen(argv[1]) * sizeof(char));
   strncat(notif_pipe_path, argv[1], strlen(argv[1]) * sizeof(char));
 
-  // TODO open pipes - ALREADY IMPLEMENTED
-  if (kvs_connect(req_pipe_path, resp_pipe_path, argv[2], notif_pipe_path, &notif_pipe) != 0) {
+  if (kvs_connect(req_pipe_path, resp_pipe_path, argv[2], notif_pipe_path, &notif_pipe)) {
     fprintf(stderr, "Failed to connect to the server\n");
     return 1;
   }
-
+  if (pthread_create(&notif_thread, NULL, notification_handler, NULL) != 0) {
+      perror("Failed to create notification thread");
+      return 1;
+  }
   while (1) {
+    if (signal_catched) {
+      printf("Disconnecting...\n");
+      return 0;
+    }
     switch (get_next(STDIN_FILENO)) {
       case CMD_DISCONNECT:
         if (kvs_disconnect() != 0) {
           fprintf(stderr, "Failed to disconnect to the server\n");
           return 1;
         }
-        // TODO: end notifications thread - ALREADY IMPLEMENTED
         return 0;
 
       case CMD_SUBSCRIBE:
@@ -92,7 +136,6 @@ int main(int argc, char *argv[]) {
         break;
 
       case EOC:
-        // input should end in a disconnect, or it will loop here forever - ALREADY IMPLEMENTED
         if (kvs_disconnect() != 0) {
           fprintf(stderr, "Failed to disconnect to the server\n");
           break;

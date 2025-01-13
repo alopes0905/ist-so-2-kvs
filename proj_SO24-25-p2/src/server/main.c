@@ -31,10 +31,13 @@ typedef struct {
     char req_pipe_path[MAX_STRING_SIZE];
     char resp_pipe_path[MAX_STRING_SIZE];
     char notif_pipe_path[MAX_STRING_SIZE];
+    int req_fd;
+    int resp_fd;
+    int notif_fd;
+    int active;
 } SessionRequest;
 
 SessionRequest session_buffer[MAX_SESSION_COUNT];
-int buffer_in = 0;
 int buffer_out = 0;
 
 sem_t empty_slots;
@@ -53,7 +56,6 @@ volatile sig_atomic_t sigusr1_received = 0;
 
 void handle_sigusr1() {
   sigusr1_received = 1;
-  printf("Received SIGUSR1\n");
 }
 
 int filter_job_files(const struct dirent *entry) {
@@ -255,6 +257,7 @@ static void *get_file(void *arguments) {
       return NULL;
     }
   }
+  run_job(STDIN_FILENO, STDOUT_FILENO, "stdin"); //NIGGA TIRAR
 
   if (pthread_mutex_unlock(&thread_data->directory_mutex) != 0) {
     fprintf(stderr, "Thread failed to unlock directory_mutex\n");
@@ -264,7 +267,6 @@ static void *get_file(void *arguments) {
   pthread_exit(NULL);
 }
 
-//LOPES
 void *host_task() {
     int fifo_fd = open(register_fifo_path, O_RDONLY);
     if (fifo_fd == -1) {
@@ -272,29 +274,59 @@ void *host_task() {
         return NULL;
     }
 
-    char buffer[256];
+    char buffer[MAX_WRITE_SIZE];
     while (1) {
       if (sigusr1_received) {
-        
+
         printf("Received SIGUSR1\n");
         handle_signal();
-
+        
+        for (int i = 0; i < MAX_SESSION_COUNT; i++) {
+          printf("Active inicial: %d, Valor do i: %d\n", session_buffer[i].active, i);
+          printf("RESP: %d\n", session_buffer[i].resp_fd);
+          if (session_buffer[i].active) {
+            printf("OIOIOIOI\n");
+            pthread_mutex_lock(&buffer_mutex);
+            if (session_buffer[i].resp_fd != -1) {
+                close(session_buffer[i].resp_fd);
+                session_buffer[i].resp_fd = -1;
+            }
+            if (session_buffer[i].notif_fd != -1) {
+                char response[MAX_STRING_SIZE] = "-1|kill";
+                write(session_buffer[i].notif_fd, response, sizeof(response));
+                close(session_buffer[i].notif_fd);
+                session_buffer[i].notif_fd = -1;
+            }
+            session_buffer[i].active = 0;
+            printf("0\n");
+            pthread_mutex_unlock(&buffer_mutex);
+          }
+          printf("Active final: %d\n", session_buffer[i].active);
+        }
         sigusr1_received = 0;
       }
+
       ssize_t bytes_read = read(fifo_fd, buffer, sizeof(buffer));
       if (bytes_read > 0) {
-          SessionRequest request;
-          
-          sscanf(buffer + 1, "|%[^|]|%[^|]|%[^|]", request.req_pipe_path, request.resp_pipe_path, request.notif_pipe_path);
 
-          sem_wait(&empty_slots);
-          pthread_mutex_lock(&buffer_mutex);
-          
-          session_buffer[buffer_in] = request;
-          buffer_in = (buffer_in + 1) % MAX_SESSION_COUNT;
+        sem_wait(&empty_slots);
+        pthread_mutex_lock(&buffer_mutex);
 
-          pthread_mutex_unlock(&buffer_mutex);
-          sem_post(&full_slots);
+        SessionRequest request;
+        
+        sscanf(buffer + 1, "|%[^|]|%[^|]|%[^|]", request.req_pipe_path, request.resp_pipe_path, request.notif_pipe_path);
+
+
+        request.req_fd = open(request.req_pipe_path, O_RDONLY);
+        request.resp_fd = open(request.resp_pipe_path, O_WRONLY);
+        request.notif_fd = open(request.notif_pipe_path, O_WRONLY);
+
+        printf("resp_fd: %d\n", request.resp_fd);
+        
+        session_buffer[buffer_out] = request;
+
+        pthread_mutex_unlock(&buffer_mutex);
+        sem_post(&full_slots);
       }
     }
     close(fifo_fd);
@@ -302,27 +334,23 @@ void *host_task() {
 }
 
 int sessions_receiver(SessionRequest request) {
-  // Handle the session request
-  int resp_fd = open(request.resp_pipe_path, O_WRONLY);
-  if (resp_fd == -1) {
-      perror("Failed to open response pipe");
-  }
 
   char response[2] = {OP_CODE_CONNECT, 0};
-  if (write(resp_fd, response, sizeof(response)) == -1) {
+  
+  if (write(request.resp_fd, response, sizeof(response)) == -1) {
       perror("Failed to write to response pipe");
   }
-  close(resp_fd);
+  printf("Received CONNECT command\n");
 
-
-  int req_fd = open(request.req_pipe_path, O_RDONLY);
-  if (req_fd == -1) {
+  if (request.req_fd == -1) {
       perror("Failed to open request pipe");
   }
-  char buffer[256];
+
+  char buffer[MAX_WRITE_SIZE];
   char key[MAX_STRING_SIZE];
-  while (1) {
-    ssize_t bytes_read = read(req_fd, buffer, sizeof(buffer));
+  while (request.active) {
+    
+    ssize_t bytes_read = read(request.req_fd, buffer, sizeof(buffer));
     if (bytes_read > 0) {
       int opcode = buffer[0];
       switch (opcode) {
@@ -331,53 +359,59 @@ int sessions_receiver(SessionRequest request) {
           response[0] = OP_CODE_SUBSCRIBE;
           if (kvs_key_check(key)) {
             response[1] = 1;
-            add_subscription(key, request.notif_pipe_path);
+            add_subscription(key, request.notif_fd);
           } 
           else {
             response[1] = 0;
           }
-          resp_fd = open(request.resp_pipe_path, O_WRONLY);
-          if (resp_fd != -1) {
-            write(resp_fd, response, sizeof(response));
-            close(resp_fd);
+
+          if (request.resp_fd != -1) {
+            write(request.resp_fd, response, sizeof(response));
           }
           printf("Received SUBSCRIBE command\n");
           break;
         }
         case OP_CODE_UNSUBSCRIBE: {
           sscanf(buffer + 1, "|%[^|]", key);
-          int subscription_exists = remove_subscription(key, request.notif_pipe_path);
-          resp_fd = open(request.resp_pipe_path, O_WRONLY);
-          if (resp_fd != -1) {
+          int subscription_exists = remove_subscription(key, request.notif_fd);
+
+          if (request.resp_fd != -1) {
             response[0] = OP_CODE_UNSUBSCRIBE;
             response[1] = subscription_exists ? 0 : 1;
-            write(resp_fd, response, sizeof(response));
-            close(resp_fd);
+            write(request.resp_fd, response, sizeof(response));
+
           }
           printf("Received UNSUBSCRIBE command\n");
           break;
         }
         case OP_CODE_DISCONNECT: {
-          resp_fd = open(request.resp_pipe_path, O_WRONLY);
-          if (resp_fd != -1) {
+          if (request.resp_fd != -1) {
             response[0] = OP_CODE_DISCONNECT;
-            response[1] = 0; //FIXME
-            write(resp_fd, response, sizeof(response));
-            close(resp_fd);
+            response[1] = 0;
+            write(request.resp_fd, response, sizeof(response));
+            request.active = 0;
+            printf("0\n");
+            close(request.resp_fd);
+            close(request.req_fd);
+            close(request.notif_fd);
           }
-          close(req_fd);
           printf("Received DISCONNECT command\n");
           return 1;
         }
         default:
-          fprintf(stderr, "Unknown opcode received: %d\n", opcode);
           break;
       }
+    } else {
+      return 1;
     }
   }
+  request.active = 0;
+  sem_post(&empty_slots);
+  return 1;
 } 
 
 void *manager_task() {
+  int index;
   sigset_t set;
   sigemptyset(&set);
   sigaddset(&set, SIGUSR1);
@@ -385,27 +419,28 @@ void *manager_task() {
   while (1) {
     sem_wait(&full_slots);
     pthread_mutex_lock(&buffer_mutex);
+    sem_getvalue(&full_slots, &index);
 
-    SessionRequest request = session_buffer[buffer_out];
-    buffer_out = (buffer_out + 1) % MAX_SESSION_COUNT;
+    SessionRequest request = session_buffer[index];
+    request.active = 1;
 
     pthread_mutex_unlock(&buffer_mutex);
     sem_post(&empty_slots);
-
     sessions_receiver(request);
+
   }
   return NULL;
 }
 
 void dispatch_threads(DIR *dir) {
     pthread_t *threads = malloc(max_threads * sizeof(pthread_t));
+    
     if (threads == NULL) {
         fprintf(stderr, "Failed to allocate memory for threads\n");
         return;
     }
 
     struct SharedData thread_data = {dir, jobs_directory, PTHREAD_MUTEX_INITIALIZER};
-
     for (size_t i = 0; i < max_threads; i++) {
         if (pthread_create(&threads[i], NULL, get_file, (void *)&thread_data) != 0) {
             fprintf(stderr, "Failed to create thread %zu\n", i);
@@ -420,6 +455,7 @@ void dispatch_threads(DIR *dir) {
 
     sem_init(&empty_slots, 0, MAX_SESSION_COUNT);
     sem_init(&full_slots, 0, 0);
+    
 
     if (pthread_create(&host_thread, NULL, host_task, NULL) != 0) {
         fprintf(stderr, "Failed to create host thread\n");
@@ -467,7 +503,6 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  // Configurar o manipulador de sinal para SIGUSR1
   struct sigaction sa;
   memset(&sa, 0, sizeof(sa));
   sa.sa_handler = handle_sigusr1;
@@ -479,6 +514,7 @@ int main(int argc, char **argv) {
   }
 
   jobs_directory = argv[1];
+  unlink(argv[4]);
   register_fifo_path = argv[4];
 
   char *endptr;
@@ -510,20 +546,11 @@ int main(int argc, char **argv) {
     write_str(STDERR_FILENO, "Failed to initialize KVS\n");
     return 1;
   }
-  
-  //FIXME LOPES
-  if (access(register_fifo_path, F_OK) == 0) {
-    if (unlink(register_fifo_path) == -1) {
-        perror("Failed to remove existing register FIFO");
-        return 1;
-    }
-  }
-  
+
   if (mkfifo(register_fifo_path, 0777) < 0) {
     write_str(STDERR_FILENO, "Failed to create register fifo\n");
     return 1;
   }
-  //FIXME LOPES
   
   DIR *dir = opendir(argv[1]);
   if (dir == NULL) {

@@ -6,10 +6,12 @@
 #include <unistd.h>
 #include "subscriptions.h"
 #include "constants.h"
+#include "src/common/constants.h"
 
 typedef struct Subscription {
     char key[MAX_STRING_SIZE];
-    char notif_pipe_path[MAX_STRING_SIZE];
+    //char notif_pipe_path[MAX_STRING_SIZE]; MONTEIRO
+    int notif_fd; //MONTEIRO
     struct Subscription *next;
 } Subscription;
 
@@ -28,7 +30,7 @@ void handle_signal() {
     pthread_mutex_unlock(&subscriptions_mutex);
 }
 
-void add_subscription(const char *key, const char *notif_pipe_path) {
+void add_subscription(const char *key, int notif_fd) {
     pthread_mutex_lock(&subscriptions_mutex);
     Subscription *new_sub = malloc(sizeof(Subscription));
     if (new_sub == NULL) {
@@ -37,20 +39,19 @@ void add_subscription(const char *key, const char *notif_pipe_path) {
         return;
     }
     strncpy(new_sub->key, key, MAX_STRING_SIZE);
-    strncpy(new_sub->notif_pipe_path, notif_pipe_path, MAX_STRING_SIZE);
+    new_sub->notif_fd = notif_fd;
     new_sub->next = subscriptions;
     subscriptions = new_sub;
     pthread_mutex_unlock(&subscriptions_mutex);
 }
 
-int remove_subscription(const char *key, const char *notif_pipe_path) {
+int remove_subscription(const char *key, int notif_fd) {
     pthread_mutex_lock(&subscriptions_mutex);
     Subscription **current = &subscriptions;
     int subscription_exists = 0;
     while (*current) {
         Subscription *entry = *current;
-        if (strncmp(entry->key, key, MAX_STRING_SIZE) == 0 &&
-            strncmp(entry->notif_pipe_path, notif_pipe_path, MAX_STRING_SIZE) == 0) {
+        if (strncmp(entry->key, key, MAX_STRING_SIZE) == 0 && entry->notif_fd == notif_fd) {
             *current = entry->next;
             free(entry);
             subscription_exists = 1;
@@ -67,12 +68,10 @@ void notify_subscribers(const char *key, const char *value) {
     Subscription *current = subscriptions;
     while (current) {
         if (strncmp(current->key, key, MAX_STRING_SIZE) == 0) {
-            int notif_fd = open(current->notif_pipe_path, O_WRONLY);
-            if (notif_fd != -1) {
+            if (current->notif_fd != -1) {
                 char message[2 * MAX_STRING_SIZE + 2];
                 snprintf(message, sizeof(message), "%s|%s", key, value);
-                write(notif_fd, message, strlen(message) + 1);
-                close(notif_fd);
+                write(current->notif_fd, message, strlen(message) + 1);
             }
         }
         current = current->next;

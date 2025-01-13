@@ -11,6 +11,7 @@
 #include "constants.h"
 #include "io.h"
 #include "kvs.h"
+#include "src/common/constants.h"
 
 static struct HashTable *kvs_table = NULL;
 

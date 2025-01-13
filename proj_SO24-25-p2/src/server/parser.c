@@ -7,6 +7,7 @@
 
 #include "constants.h"
 #include "io.h"
+#include "src/common/constants.h"
 
 // Reads a string and indicates the position from where it was
 // extracted, based on the KVS specification.

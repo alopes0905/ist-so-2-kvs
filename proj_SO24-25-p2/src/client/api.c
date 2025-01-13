@@ -18,8 +18,9 @@ char const *respPipePath;
 char const *notifPipePath;
 char const *serverPipePath;
 
-int *notifPipe;
-pthread_t notif_thread;
+int req_fd;
+int resp_fd;
+int notif_fd;
 
 void cleanup_pipes() {
   unlink(reqPipePath);
@@ -27,36 +28,8 @@ void cleanup_pipes() {
   unlink(notifPipePath);
 }
 
-void *notification_handler(void *arg) {
-    int notif_pipe = *(int *)arg;
-    char buffer[2 * MAX_STRING_SIZE + 2];
 
-    while (1) {
-        ssize_t bytes_read = read(notif_pipe, buffer, sizeof(buffer));
-        if (bytes_read > 0) {
-          char key[MAX_STRING_SIZE];
-          char value[MAX_STRING_SIZE];
-          sscanf(buffer, "%[^|]|%s", key, value);
-          if (strcmp(value, "DELETED") == 0) {
-            printf("(%s,DELETED)\n", key);
-          } else {
-            printf("(%s,%s)\n", key, value);
-          }
-        }
-    }
-    return NULL;
-}
-
-// Function to create a FIFO and handle reconnection
 int create_fifo(const char *fifo_path) {
-    if (access(fifo_path, F_OK) == 0) { // Check if FIFO already exists
-        if (unlink(fifo_path) == -1) { // Remove the existing FIFO
-            perror("Failed to remove existing FIFO");
-            return -1;
-        }
-    }
-
-    // Create the FIFO
     if (mkfifo(fifo_path, 0777) < 0) {
         perror("Failed to create FIFO");
         return -1;
@@ -64,34 +37,29 @@ int create_fifo(const char *fifo_path) {
     return 0;
 }
 
-void responsePrint(const char *operation, int response) {
-  printf("Server returned %d for operation: %s\n", response, operation);
-  return;
-}
-
 void await_response() {
-  int fifo_fd = open(respPipePath, O_RDONLY);
-
   char buffer[256];
   while (1) {
-    ssize_t bytes_read = read(fifo_fd, buffer, sizeof(buffer));
+    ssize_t bytes_read = read(resp_fd, buffer, sizeof(buffer));
     if (bytes_read > 0) {
+      buffer[bytes_read] = '\0';
       int opcode = buffer[0];
+      int result = buffer[1];
       switch (opcode) {
         case OP_CODE_CONNECT:
-          responsePrint("connect", buffer[1]);
+          printf("Server returned %d for operation: connect\n", result);
           return;
 
         case OP_CODE_DISCONNECT:
-          responsePrint("disconnect", buffer[1]);
+          printf("Server returned %d for operation: disconnect\n", result);
           return;
 
         case OP_CODE_SUBSCRIBE:
-          responsePrint("subscribe", buffer[1]);
+          printf("Server returned %d for operation: subscribe\n", result);
           return;
 
         case OP_CODE_UNSUBSCRIBE:
-          responsePrint("unsubscribe", buffer[1]);
+          printf("Server returned %d for operation: unsubscribe\n", result);
           return;
         
         default:
@@ -104,7 +72,10 @@ void await_response() {
 int kvs_connect(char const *req_pipe_path, char const *resp_pipe_path,
                 char const *server_pipe_path, char const *notif_pipe_path,
                 int *notif_pipe) {
-  // create pipes and connect             
+  // create pipes and connect
+  unlink(req_pipe_path);
+  unlink(resp_pipe_path);
+  unlink(notif_pipe_path);         
   reqPipePath = req_pipe_path;
   respPipePath = resp_pipe_path;
   notifPipePath = notif_pipe_path;
@@ -113,17 +84,17 @@ int kvs_connect(char const *req_pipe_path, char const *resp_pipe_path,
   //FIXME LOPES ALTERAR
   if (create_fifo(req_pipe_path) == -1) {
     unlink(req_pipe_path);
-      return 1;
+    return 1;
   }
 
   if (create_fifo(resp_pipe_path) == -1) {
-      unlink(req_pipe_path);
-      return 1;
+    unlink(req_pipe_path);
+    return 1;
   }
 
   if (create_fifo(notif_pipe_path) == -1) {
-      unlink(resp_pipe_path);
-      return 1;
+    unlink(resp_pipe_path);
+    return 1;
   }
 
   int server_fd = open(server_pipe_path, O_WRONLY);
@@ -142,33 +113,35 @@ int kvs_connect(char const *req_pipe_path, char const *resp_pipe_path,
     return 1;
   }
 
-  close(server_fd); //FIXME - CLOSE?
-  await_response();
+  close(server_fd);
 
-  *notif_pipe = open(notifPipePath, O_RDONLY | O_NONBLOCK);
-  if (*notif_pipe == -1) {
-    perror("Failed to open notification pipe");
-    cleanup_pipes();
-    return 1;
-  }
-  notifPipe = notif_pipe;
-  if (pthread_create(&notif_thread, NULL, notification_handler, notifPipe) != 0) {
-      perror("Failed to create notification thread");
-      cleanup_pipes();
-      return 1;
-  }
-  return 0;
-}
-
-int kvs_disconnect(void) {
-
-  int req_fd = open(reqPipePath, O_WRONLY);
+  req_fd = open(reqPipePath, O_WRONLY);
   if (req_fd == -1) {
     perror("Failed to open server pipe");
     cleanup_pipes();
     return 1;
   }
 
+  resp_fd = open(resp_pipe_path, O_RDONLY);
+  if (resp_fd == -1) {
+    perror("Failed to open server pipe");
+    cleanup_pipes();
+    return 1;
+  }
+
+  *notif_pipe = open(notif_pipe_path, O_RDONLY);
+  if (*notif_pipe == -1) {
+    perror("Failed to open server pipe");
+    cleanup_pipes();
+    return 1;
+  }
+  notif_fd = *notif_pipe;
+  await_response();
+
+  return 0;
+}
+
+int kvs_disconnect(void) {
   char message[2];
   snprintf(message, sizeof(message), "%c", OP_CODE_DISCONNECT);
   if (write(req_fd, message, sizeof(message)) == -1) {
@@ -178,21 +151,15 @@ int kvs_disconnect(void) {
     return 1;
   }
   
-  close(req_fd); //FIXME - CLOSE?
   await_response();
-  cleanup_pipes(); //FIXME - ERRORS?
+  close(req_fd);
+  close(resp_fd); 
+  close(notif_fd); 
+  cleanup_pipes();
   return 0;
 }
 
 int kvs_subscribe(const char *key) {
-  // send subscribe message to request pipe and wait for response in response
-  // pipe
-  int req_fd = open(reqPipePath, O_WRONLY);
-  if (req_fd == -1) {
-    perror("Failed to open server pipe");
-    cleanup_pipes();
-    return 1;
-  }
 
   char message[MAX_STRING_SIZE + 3];
   snprintf(message, sizeof(message), "%c|%s", OP_CODE_SUBSCRIBE, key);
@@ -202,31 +169,11 @@ int kvs_subscribe(const char *key) {
     cleanup_pipes();
     return 1;
   }
-  
-  close(req_fd); //FIXME - CLOSE?
   await_response();
-  /*
-  int*notif_pipe = open(notifPipePath, O_RDONLY | O_NONBLOCK);
-  if (*notif_pipe == -1) {
-    perror("Failed to open notification pipe");
-    cleanup_pipes();
-    return 1;
-  }
-  */
-
   return 0;
 }
 
 int kvs_unsubscribe(const char *key) {
-  // send unsubscribe message to request pipe and wait for response in response
-  // pipe
-  int req_fd = open(reqPipePath, O_WRONLY);
-  if (req_fd == -1) {
-    perror("Failed to open server pipe");
-    cleanup_pipes();
-    return 1;
-  }
-
   char message[MAX_STRING_SIZE + 3];
   snprintf(message, sizeof(message), "%c|%s", OP_CODE_UNSUBSCRIBE, key);
   if (write(req_fd, message, sizeof(message)) == -1) {
@@ -236,7 +183,14 @@ int kvs_unsubscribe(const char *key) {
     return 1;
   }
   
-  close(req_fd); //FIXME - CLOSE?
   await_response();
   return 0;
+}
+
+int kvs_kill(void) {
+  close(req_fd);
+  close(resp_fd); 
+  close(notif_fd); 
+  cleanup_pipes();
+  return 1;
 }
