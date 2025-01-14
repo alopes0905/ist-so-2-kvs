@@ -1,7 +1,1 @@
-./src/server/kvs src/server/jobs 4 2 /tmp/register_fifo
-./src/client/client 1 /tmp/register_fifo
 
-
-ERRORS IN CONNECT OR DISCONNECT (RESPONSE = 0 or RESPONSE = 1)
-OVERWRITE NOT POSSIBLE IN KVS_WRITE?
-CLOSE ALL FIFOs
